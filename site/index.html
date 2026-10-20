@@ -54,17 +54,10 @@
   .button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .button:hover { filter: brightness(1.08); }
   .button:focus-visible, nav a:focus-visible, .brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-  .window {
-    margin: 40px auto 0; max-width: 760px; border: 1px solid var(--line); border-radius: 10px;
-    overflow: hidden; background: var(--surface); box-shadow: 0 12px 40px rgba(0,0,0,0.18);
+  .shot {
+    display: block; width: 100%; max-width: 760px; height: auto; margin: 40px auto 0;
+    border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,0.18);
   }
-  .titlebar { display: flex; align-items: flex-end; gap: 4px; height: 38px; padding: 0 12px; background: color-mix(in srgb, var(--surface) 70%, #000); }
-  .titlebar .icon { width: 16px; height: 16px; margin: 0 10px 11px 0; }
-  .tab { padding: 6px 16px; font-size: 13px; color: var(--dim); border-radius: 6px 6px 0 0; }
-  .tab.active { background: var(--surface); color: var(--text); }
-  .menubar { display: flex; gap: 18px; padding: 7px 14px; font-size: 13px; border-bottom: 1px solid var(--line); }
-  .page { background: var(--bg); padding: 18px 20px 28px; text-align: left; font: 14px/1.7 ui-monospace, "Cascadia Mono", Consolas, monospace; min-height: 150px; }
-  .page .dim { color: var(--dim); }
   .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; padding: 56px 0; }
   .card { border: 1px solid var(--line); border-radius: 10px; padding: 20px; background: var(--surface); }
   .card h2 { font-size: 17px; margin: 0 0 6px; }
@@ -100,21 +93,7 @@
       <a class="button" href="https://github.com/rsxdalv/TextCraft">View on GitHub</a>
     </div>
 
-    <div class="window" role="img" aria-label="Illustration of the TextCraft window: a tab, the File Edit View menu, and a page of text">
-      <div class="titlebar">
-        <svg class="icon" viewBox="0 0 64 64" aria-hidden="true"><use href="icon.svg#tile"/></svg>
-        <span class="tab active">notes.md</span>
-        <span class="tab">Untitled</span>
-      </div>
-      <div class="menubar"><span>File</span><span>Edit</span><span>View</span></div>
-      <div class="page">
-        <div><strong># Shopping</strong></div>
-        <div class="dim">&nbsp;</div>
-        <div>- bread</div>
-        <div>- <strong>oat milk</strong></div>
-        <div>- something <em>sweet</em></div>
-      </div>
-    </div>
+    <img class="shot" src="screenshot.png" width="869" height="545" alt="TextCraft showing a document in a tab, with the menu bar, formatting toolbar and status bar">
   </section>
 
   <section class="wrap features" id="features" aria-label="Features">
