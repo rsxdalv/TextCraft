@@ -9,6 +9,8 @@ A fast, modern text and Markdown editor for the desktop, written in Rust.
 > TextCraft is in early development and has no release yet. You can build it
 > from source today; see [Try it](#try-it).
 
+![TextCraft showing a document in a tab, with the menu bar, formatting toolbar and status bar](site/screenshot.png)
+
 ## What it does
 
 **Your files stay safe**
