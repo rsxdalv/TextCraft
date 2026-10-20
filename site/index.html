@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TextCraft</title>
+<meta name="description" content="TextCraft is a fast, modern text and Markdown editor written in Rust.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f3f3f3;
+    --line: #dcdcdc;
+    --text: #1a1a1a;
+    --dim: #5a5a5a;
+    --accent: #2a8fe8;
+    --accent-ink: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c1c;
+      --surface: #2a2a2a;
+      --line: #3c3c3c;
+      --text: #f0f0f0;
+      --dim: #aeaeae;
+      --accent: #4aa5f0;
+      --accent-ink: #0b0b0b;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.6 "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 16px; }
+  header { padding: 20px 0; }
+  header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 18px; color: inherit; text-decoration: none; }
+  .brand svg { width: 28px; height: 28px; }
+  nav { display: flex; gap: 20px; }
+  nav a { color: var(--dim); text-decoration: none; }
+  nav a:hover { color: var(--text); }
+  .hero { padding: 56px 0 40px; text-align: center; }
+  .hero h1 { font-size: clamp(34px, 6vw, 56px); line-height: 1.1; margin: 0 0 16px; letter-spacing: -0.02em; }
+  .hero p { margin: 0 auto 28px; max-width: 560px; color: var(--dim); font-size: 19px; }
+  .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+  .button {
+    display: inline-block; padding: 10px 20px; border-radius: 8px; font-weight: 600;
+    text-decoration: none; border: 1px solid var(--line); color: var(--text); background: var(--surface);
+  }
+  .button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .button:hover { filter: brightness(1.08); }
+  .button:focus-visible, nav a:focus-visible, .brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .shot {
+    display: block; width: 100%; max-width: 760px; height: auto; margin: 40px auto 0;
+    border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,0.18);
+  }
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; padding: 56px 0; }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 20px; background: var(--surface); }
+  .card h2 { font-size: 17px; margin: 0 0 6px; }
+  .card p { margin: 0; color: var(--dim); }
+  .get { padding: 8px 0 56px; }
+  .get h2 { font-size: 24px; margin: 0 0 12px; }
+  .get h3 { font-size: 18px; margin: 28px 0 0; }
+  .downloads { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 12px; }
+  .downloads li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+  .downloads .os { font-weight: 600; min-width: 7em; }
+  .downloads .alt { color: var(--dim); }
+  .release-line { color: var(--dim); margin: 0; }
+  .note { color: var(--dim); font-size: 14px; margin: 16px 0 0; }
+  pre { margin: 12px 0 0; padding: 14px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); overflow-x: auto; font: 14px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace; }
+  footer { border-top: 1px solid var(--line); padding: 24px 0 40px; color: var(--dim); font-size: 14px; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <a class="brand" href="#top" id="top">
+      <svg viewBox="0 0 64 64" aria-hidden="true"><use href="icon.svg#tile"/></svg>
+      TextCraft
+    </a>
+    <nav aria-label="Primary">
+      <a href="#features">Features</a>
+      <a href="#get">Get it</a>
+      <a href="https://github.com/rsxdalv/TextCraft">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero wrap">
+    <h1>A fast, modern text editor.</h1>
+    <p>Plain text and Markdown in one small native app, written in Rust.</p>
+    <div class="actions">
+      <a class="button primary" href="#get">Download</a>
+      <a class="button" href="https://github.com/rsxdalv/TextCraft">View on GitHub</a>
+    </div>
+
+    <img class="shot" src="screenshot.png" width="869" height="545" alt="TextCraft showing a document in a tab, with the menu bar, formatting toolbar and status bar">
+  </section>
+
+  <section class="wrap features" id="features" aria-label="Features">
+    <div class="card"><h2>Tabs that behave</h2><p>Open many documents, drag tabs to reorder them, and scroll through the strip when there are too many to fit.</p></div>
+    <div class="card"><h2>Markdown built in</h2><p>A formatting toolbar for headings, lists, bold, italic, links and tables, and a rendered view of the document.</p></div>
+    <div class="card"><h2>Native feel</h2><p>One title row with the tabs and window buttons, Alt access keys on every menu, and the system's own Open and Save dialogs.</p></div>
+    <div class="card"><h2>Small and quick</h2><p>No web view and no runtime to install. One Rust binary, drawn with egui.</p></div>
+  </section>
+
+  <section class="wrap get" id="get">
+    <h2>Download</h2>
+    <p class="release-line" id="release-line">Packages for Windows, macOS and Linux are on the <a href="https://github.com/rsxdalv/TextCraft/releases/latest">latest release</a>.</p>
+    <ul class="downloads">
+      <li>
+        <span class="os">Windows</span>
+        <a class="button primary" data-asset="windows-x64.msi" href="https://github.com/rsxdalv/TextCraft/releases/latest">Installer (.msi)</a>
+        <a class="alt" data-asset="windows-x64-portable.zip" href="https://github.com/rsxdalv/TextCraft/releases/latest">or portable .zip</a>
+      </li>
+      <li>
+        <span class="os">macOS</span>
+        <a class="button primary" data-asset="macos-universal.zip" href="https://github.com/rsxdalv/TextCraft/releases/latest">TextCraft.app (.zip)</a>
+        <span class="alt">Apple silicon and Intel</span>
+      </li>
+      <li>
+        <span class="os">Linux</span>
+        <a class="button primary" data-asset="linux-x86_64.tar.gz" href="https://github.com/rsxdalv/TextCraft/releases/latest">x86_64 (.tar.gz)</a>
+        <span class="alt">needs glibc 2.39 or newer</span>
+      </li>
+    </ul>
+    <p class="note">The builds are not code-signed, so the first launch asks you to confirm. On Windows choose <em>More info</em>, then <em>Run anyway</em>. On macOS open System Settings, Privacy &amp; Security, and choose <em>Open Anyway</em>. Checksums are on the release page.</p>
+
+    <h3>Or build it yourself</h3>
+    <p>You need <a href="https://rustup.rs">Rust</a> and Git.</p>
+<pre><code>git clone https://github.com/rsxdalv/TextCraft
+cd TextCraft
+cargo run --release -p nc-app</code></pre>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    TextCraft is open source, under the MIT licence.
+    <a href="https://github.com/rsxdalv/TextCraft">Source on GitHub</a>.
+  </div>
+</footer>
+<script>
+  // Point each button at the newest release's file, and show its version. Without
+  // JavaScript, or if GitHub cannot be reached, the links above go to the release page.
+  (function () {
+    fetch("https://api.github.com/repos/rsxdalv/TextCraft/releases/latest", { headers: { Accept: "application/vnd.github+json" } })
+      .then(function (response) { return response.ok ? response.json() : Promise.reject(); })
+      .then(function (release) {
+        document.querySelectorAll("[data-asset]").forEach(function (link) {
+          var asset = (release.assets || []).find(function (a) { return a.name.endsWith(link.dataset.asset); });
+          if (asset) link.href = asset.browser_download_url;
+        });
+        var line = document.getElementById("release-line");
+        var date = release.published_at ? new Date(release.published_at).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }) : "";
+        line.textContent = "Latest release: " + (release.name || release.tag_name) + (date ? ", " + date : "") + ". ";
+        var all = document.createElement("a");
+        all.href = release.html_url;
+        all.textContent = "Release notes and all files";
+        line.appendChild(all);
+      })
+      .catch(function () {});
+  })();
+</script>
+</body>
+</html>

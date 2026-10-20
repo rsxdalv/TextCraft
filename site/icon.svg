@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <g id="tile">
+    <rect width="64" height="64" rx="14" fill="#2a8fe8"/>
+    <rect x="14.1" y="16.6" width="35.8" height="38.4" rx="3.2" fill="#fcfdff"/>
+    <rect x="21.1" y="26.6" width="21.8" height="2.8" rx="1.4" fill="#2a8fe8"/>
+    <rect x="21.1" y="34.2" width="21.8" height="2.8" rx="1.4" fill="#2a8fe8"/>
+    <rect x="21.1" y="41.8" width="12" height="2.8" rx="1.4" fill="#2a8fe8"/>
+    <rect x="22.1" y="11.2" width="4.5" height="9.6" rx="2.2" fill="#144f8a"/>
+    <rect x="37.4" y="11.2" width="4.5" height="9.6" rx="2.2" fill="#144f8a"/>
+  </g>
+</svg>
