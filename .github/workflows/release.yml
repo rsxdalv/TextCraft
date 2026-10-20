@@ -116,7 +116,7 @@ jobs:
       - name: Build
         run: cargo build --release --locked -p nc-app
       - name: Package (.tar.gz)
-        run: ./packaging/linux/package.sh "$VERSION" target/release/textcraft x86_64
+        run: bash ./packaging/linux/package.sh "$VERSION" target/release/textcraft x86_64
       - uses: actions/upload-artifact@v7
         with:
           name: release-linux-x86_64
@@ -151,7 +151,7 @@ jobs:
             target/x86_64-apple-darwin/release/textcraft
           lipo -info target/universal/textcraft
       - name: Package (TextCraft.app in a .zip)
-        run: ./packaging/macos/package.sh "$VERSION" target/universal/textcraft universal
+        run: bash ./packaging/macos/package.sh "$VERSION" target/universal/textcraft universal
       - uses: actions/upload-artifact@v7
         with:
           name: release-macos-universal
