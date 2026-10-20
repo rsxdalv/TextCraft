@@ -3,11 +3,12 @@
 
 fn main() {
     println!("cargo:rerun-if-changed=../../assets/textcraft.ico");
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
-        return;
-    }
+    // `cfg(windows)` is the machine building, `CARGO_CFG_TARGET_OS` the one being built for;
+    // the icon needs both a Windows resource compiler and a Windows target.
     #[cfg(windows)]
-    windows_resources();
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        windows_resources();
+    }
 }
 
 #[cfg(windows)]
