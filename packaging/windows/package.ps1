@@ -96,7 +96,7 @@ $Portable = Join-Path $TargetDir "windows-package\textcraft-$Version-windows-x64
 Remove-Item -Recurse -Force $Portable -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $Portable | Out-Null
 Copy-Item (Join-Path $Stage 'textcraft.exe') $Portable
-foreach ($f in 'README.md', 'LICENSE') {
+foreach ($f in 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md') {
   $p = Join-Path $Root $f
   if (Test-Path $p) { Copy-Item $p $Portable }
 }

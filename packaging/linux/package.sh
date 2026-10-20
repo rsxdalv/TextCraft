@@ -19,7 +19,7 @@ stage="$(mktemp -d)/$name"
 [ -f "$binary" ] || { echo "error: $binary does not exist" >&2; exit 1; }
 mkdir -p "$stage" "$dist"
 install -m 755 "$binary" "$stage/textcraft"
-install -m 644 "$root/LICENSE" "$root/README.md" "$stage/"
+install -m 644 "$root/LICENSE" "$root/THIRD_PARTY_NOTICES.md" "$root/README.md" "$stage/"
 install -m 644 "$root/packaging/linux/textcraft.desktop" "$stage/"
 install -m 644 "$root/assets/textcraft.png" "$stage/"
 

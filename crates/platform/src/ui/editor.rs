@@ -16,6 +16,11 @@
 //!
 //! [`Shell::word_wrap`]: crate::ui::state::Shell::word_wrap
 //!
+//! The Markdown source view is styled while it is typed through a `TextEdit` layouter
+//! (see [`styled_text`]). That use of a layouter follows AlienTechSoftware/notecraft
+//! `crates/ui-egui/src/pagetext.rs` (MIT OR Apache-2.0, Copyright (c) 2026 AlienTech Software
+//! and the NoteCraft contributors), adapted for TextCraft; see `THIRD_PARTY_NOTICES.md`.
+//!
 //! The text is not a `String` the shell owns: it is the `nc-core` [`Document`]
 //! inside the tab's [`TextFile`](nc_textproc::TextFile), edited through a thin
 //! [`egui::TextBuffer`] adapter. That keeps one authoritative copy of the text

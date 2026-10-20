@@ -23,6 +23,7 @@ short_version="${version%%-*}"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$dist"
 install -m 755 "$binary" "$app/Contents/MacOS/textcraft"
 install -m 644 "$root/LICENSE" "$app/Contents/Resources/LICENSE"
+install -m 644 "$root/THIRD_PARTY_NOTICES.md" "$app/Contents/Resources/THIRD_PARTY_NOTICES.md"
 
 # The icon is a nicety: if building the .icns fails, ship without it rather than fail the release.
 if iconset="$work/textcraft.iconset" && mkdir -p "$iconset" \
