@@ -1930,7 +1930,7 @@ dependencies = [
 
 [[package]]
 name = "nc-app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "nc-platform",
@@ -1943,11 +1943,11 @@ dependencies = [
 
 [[package]]
 name = "nc-commands"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "nc-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "proptest",
  "unicode-segmentation",
@@ -1955,14 +1955,14 @@ dependencies = [
 
 [[package]]
 name = "nc-markdown"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "proptest",
 ]
 
 [[package]]
 name = "nc-platform"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "craft-ui",
  "eframe",
@@ -1980,7 +1980,7 @@ dependencies = [
 
 [[package]]
 name = "nc-textproc"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "nc-core",
  "proptest",
@@ -4624,7 +4624,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "xtask"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "yoke"
