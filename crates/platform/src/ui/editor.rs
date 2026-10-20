@@ -16,6 +16,11 @@
 //!
 //! [`Shell::word_wrap`]: crate::ui::state::Shell::word_wrap
 //!
+//! The Markdown source view is styled while it is typed through a `TextEdit` layouter
+//! (see [`styled_text`]). That use of a layouter follows AlienTechSoftware/notecraft
+//! `crates/ui-egui/src/pagetext.rs` (MIT OR Apache-2.0, Copyright (c) 2026 AlienTech Software
+//! and the NoteCraft contributors), adapted for TextCraft; see `THIRD_PARTY_NOTICES.md`.
+//!
 //! The text is not a `String` the shell owns: it is the `nc-core` [`Document`]
 //! inside the tab's [`TextFile`](nc_textproc::TextFile), edited through a thin
 //! [`egui::TextBuffer`] adapter. That keeps one authoritative copy of the text
@@ -31,7 +36,9 @@ use nc_core::Document;
 
 use crate::ui::a11y;
 use crate::ui::markdown_view;
-use crate::ui::state::{Shell, Tab};
+use crate::ui::state::{DocKind, Shell, Tab};
+use crate::ui::styled_text;
+use crate::ui::theme::Palette;
 
 /// The editor widget's id. Fixed so a queued selection can be stored under it
 /// and tests can read the caret back.
@@ -60,17 +67,27 @@ const LINE_HEADROOM: f32 = 16.0;
 /// widget for. Only the longest line is laid out: the rest of the document cannot be
 /// wider than it, and a document of any size would otherwise be measured twice per
 /// frame in the unwrapped case.
-fn widest_line_width(text: &str, font: &FontId, ui: &egui::Ui) -> f32 {
-    let longest = text
-        .split('\n')
-        .max_by_key(|line| line.chars().count())
-        .unwrap_or("");
-    let job = egui::text::LayoutJob::simple(
-        longest.to_owned(),
-        font.clone(),
-        ui.visuals().strong_text_color(),
-        f32::INFINITY,
-    );
+///
+/// A Markdown document is laid out styled (headings are larger), so for it the widest line
+/// is found and measured with that styling; see [`styled_text::widest_line`].
+fn widest_line_width(text: &str, font: &FontId, markdown: Option<&Palette>, ui: &egui::Ui) -> f32 {
+    let job = match markdown {
+        Some(palette) => {
+            styled_text::layout_job(styled_text::widest_line(text), font, f32::INFINITY, palette)
+        }
+        None => {
+            let longest = text
+                .split('\n')
+                .max_by_key(|line| line.chars().count())
+                .unwrap_or("");
+            egui::text::LayoutJob::simple(
+                longest.to_owned(),
+                font.clone(),
+                ui.visuals().strong_text_color(),
+                f32::INFINITY,
+            )
+        }
+    };
     ui.fonts_mut(|fonts| fonts.layout_job(job)).rect.width() + LINE_HEADROOM
 }
 
@@ -137,10 +154,13 @@ fn source_view(
     let font = FontId::monospace(EDIT_FONT_SIZE * zoom);
     // Measured before the document is borrowed for the widget below, and only when it
     // is needed: the longest line alone, not a second layout of the whole document.
+    let palette = shell.palette;
+    // Only Markdown source is styled while it is typed; a plain tab is left exactly as it was.
+    let styled = (shell.tabs[index].kind == DocKind::Markdown).then_some(&palette);
     let natural = if wrap {
         0.0
     } else {
-        widest_line_width(shell.tabs[index].text(), &font, ui)
+        widest_line_width(shell.tabs[index].text(), &font, styled, ui)
     };
 
     // One area, both axes. Vertical, because a document is usually taller than the
@@ -165,10 +185,19 @@ fn source_view(
             let tab = &mut shell.tabs[index];
             let output = {
                 let mut buffer = DocBuffer(tab.document_mut());
+                let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
+                    let job = styled_text::layout_job(text.as_str(), &font, wrap_width, &palette);
+                    ui.fonts_mut(|fonts| fonts.layout_job(job))
+                };
                 let edit = egui::TextEdit::multiline(&mut buffer)
                     .id(egui::Id::new(EDITOR_ID))
                     .font(font.clone())
                     .frame(egui::Frame::NONE);
+                let edit = if styled.is_some() {
+                    edit.layouter(&mut layouter)
+                } else {
+                    edit
+                };
                 if wrap {
                     edit.desired_width(ui.available_width())
                         .min_size(egui::vec2(ui.available_width(), viewport))

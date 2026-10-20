@@ -29,6 +29,7 @@ mod settings;
 mod spacing;
 mod state;
 mod status_bar;
+mod styled_text;
 mod theme;
 mod title_bar;
 mod widgets;

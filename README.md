@@ -84,3 +84,6 @@ TextCraft is licensed under the MIT License; see [`LICENSE`](LICENSE).
 
 The editor fonts it ships are separate works under the SIL Open Font License 1.1;
 their licence texts are in [`crates/platform/assets/fonts`](crates/platform/assets/fonts).
+
+Third-party code: the styled Markdown editing is adapted from AlienTechSoftware/notecraft
+(MIT OR Apache-2.0); see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
