@@ -1,4 +1,4 @@
-# NoteCraft's embedded spelling dictionary.
+# TextCraft's embedded spelling dictionary.
 #
 # A curated list of common English words, lowercase, whitespace-separated. The
 # engine accepts regular inflections (plurals, -ed, -ing, -ly, comparatives) of

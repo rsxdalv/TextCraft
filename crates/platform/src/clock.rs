@@ -3,7 +3,7 @@
 //! `nc-textproc::TimeDate` decides the *text* of the F5 insertion; this module
 //! is the small piece of platform work that fills its fields from the system
 //! clock. The clock is read and expressed as **UTC**, because the Rust standard
-//! library exposes no local time zone and NoteCraft carries no time-zone
+//! library exposes no local time zone and TextCraft carries no time-zone
 //! database. A machine outside UTC therefore sees UTC written into the document
 //! — a recorded limitation (`docs/feature-matrix.md`, NC-S007) rather than a
 //! silent approximation, and one to revisit alongside the localisation work in

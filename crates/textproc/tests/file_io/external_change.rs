@@ -1,6 +1,6 @@
 //! NC-D006 — noticing that the file changed underneath the document.
 //!
-//! NoteCraft answers whether the bytes on disk are still what it last read or
+//! TextCraft answers whether the bytes on disk are still what it last read or
 //! wrote; deciding what to do about it — ask, reload, or ignore — is the
 //! window's rule (`docs/ui-reference.md`).
 
@@ -14,7 +14,7 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn new(name: &str) -> Self {
         let directory =
-            std::env::temp_dir().join(format!("notecraft-{name}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("textcraft-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a scratch directory");
         Self(directory)
@@ -117,7 +117,7 @@ fn saving_over_an_outside_change_writes_the_document_and_forgets_it() {
     std::fs::write(&path, b"theirs").expect("an outside write");
     assert_eq!(file.external_change(), ExternalChange::Modified);
 
-    // NoteCraft does not resolve the conflict; the caller does, and saving is
+    // TextCraft does not resolve the conflict; the caller does, and saving is
     // how the user's answer "keep mine" is carried out.
     file.save().expect("a save");
     assert_eq!(std::fs::read(&path).expect("the file"), b"mineone");

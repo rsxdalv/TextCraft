@@ -1,6 +1,6 @@
 [package]
 name = "nc-markdown"
-description = "NoteCraft Markdown formatting model: loss-keeping parse, source-editing formatting commands, deterministic serialization"
+description = "TextCraft Markdown formatting model: loss-keeping parse, source-editing formatting commands, deterministic serialization"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -2,14 +2,17 @@
 
 mod a11y;
 mod actions;
+mod app_icon;
 /// The M6 drawn-surface assertions. Test-only: they read back the shapes the
 /// shell paints, which live in private state.
 #[cfg(test)]
 mod appearance;
 mod config;
+mod desktop_tint;
 mod dialogs;
 mod editor;
 mod fonts;
+mod icons;
 mod input;
 /// The M6 acceptance suite. Test-only: it drives the shell's own state, which is
 /// private to this crate.
@@ -23,11 +26,13 @@ mod markdown_view;
 mod menu_bar;
 mod session;
 mod settings;
+mod spacing;
 mod state;
 mod status_bar;
 mod theme;
 mod title_bar;
 mod widgets;
+mod window_frame;
 mod windows;
 
 use std::path::PathBuf;
@@ -52,19 +57,22 @@ pub(crate) fn run(options: StartupOptions) -> Result<RunOutcome, PlatformError> 
             .with_title(options.title)
             .with_inner_size([1180.0, 720.0])
             .with_min_inner_size([720.0, 420.0])
-            .with_decorations(false),
+            .with_decorations(false)
+            .with_icon(app_icon::window_icon(64)),
         ..Default::default()
     };
 
     eframe::run_native(
-        "NoteCraft",
+        "TextCraft",
         native_options,
         Box::new(move |cc| {
             // The theme the shell arrives with — its default, or the restored
             // choice once settings persist — is installed before the first frame, so
             // nothing is painted in the wrong palette and then corrected.
+            desktop_tint::start(&cc.egui_ctx);
             shell.palette = theme::apply(&cc.egui_ctx, shell.theme);
             fonts::install(&cc.egui_ctx);
+            icons::install(&cc.egui_ctx);
             Ok(Box::new(ShellApp {
                 shell,
                 windows: windows::Windows::new(),
@@ -123,6 +131,10 @@ struct ShellApp {
 }
 
 impl eframe::App for ShellApp {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        window_frame::release_after_os_move(ctx, raw_input);
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         draw(&mut self.shell, ui);
         // A New window command takes effect at the end of the frame: the window
@@ -163,6 +175,9 @@ pub(crate) fn draw(shell: &mut Shell, ui: &mut egui::Ui) {
     // palette, with a cost the palette does not pay: a new face rebuilds the glyph
     // atlas, so this is called once per frame and does nothing unless the choice moved.
     fonts::apply(&ctx, shell.font_family);
+    // The SVG loader the toolbar's icons need. A no-op once installed; asked for here,
+    // every frame, so a window never draws an icon before its loader exists.
+    icons::install(&ctx);
 
     title_bar::show(shell, ui, &ctx);
 
@@ -185,6 +200,8 @@ pub(crate) fn draw(shell: &mut Shell, ui: &mut egui::Ui) {
 
     // Dialogs sit over either surface; a prompt can be raised from Settings too.
     dialogs::show(shell, &ctx);
+
+    window_frame::show(&ctx, shell.palette);
 
     // Act on a window close the window manager asked for, and on one queued by
     // the shell.
@@ -452,7 +469,7 @@ mod tests {
 
     #[test]
     fn the_command_line_opens_a_named_file_once() {
-        let directory = std::env::temp_dir().join(format!("notecraft-seed-{}", std::process::id()));
+        let directory = std::env::temp_dir().join(format!("textcraft-seed-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a scratch directory");
         let path = directory.join("note.txt");
@@ -473,7 +490,7 @@ mod tests {
         // tab each, first one shown — the argument order the CLI parse preserves
         // (cli.rs) carried through to the tab strip the user sees.
         let directory =
-            std::env::temp_dir().join(format!("notecraft-seed-order-{}", std::process::id()));
+            std::env::temp_dir().join(format!("textcraft-seed-order-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a scratch directory");
         let first = directory.join("a.txt");

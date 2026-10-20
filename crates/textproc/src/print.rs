@@ -329,8 +329,8 @@ pub fn to_postscript(pages: &[Page], setup: &PageSetup, metrics: Metrics) -> Str
 
     let mut out = String::new();
     out.push_str("%!PS-Adobe-3.0\n");
-    out.push_str("%%Creator: NoteCraft\n");
-    out.push_str("%%Title: (NoteCraft)\n");
+    out.push_str("%%Creator: TextCraft\n");
+    out.push_str("%%Title: (TextCraft)\n");
     out.push_str("%%Pages: ");
     out.push_str(&pages.len().to_string());
     out.push('\n');

@@ -1,6 +1,6 @@
 [package]
 name = "nc-textproc"
-description = "NoteCraft text processing: encoding detection and file I/O"
+description = "TextCraft text processing: encoding detection and file I/O"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

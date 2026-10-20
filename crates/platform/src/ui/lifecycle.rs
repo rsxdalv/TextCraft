@@ -28,7 +28,7 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn new(name: &str) -> Self {
         let directory =
-            std::env::temp_dir().join(format!("notecraft-m6-{name}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("textcraft-m6-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a scratch directory");
         Self(directory)
@@ -1254,7 +1254,7 @@ fn refreshing_a_document_marks_every_slip_for_underlining() {
 // One boundary worth naming: this suite drives [`save_to`] and
 // [`session::load_from`] with an explicit path rather than the shell's real
 // `save`/`restore_shell` pair, because those resolve the user's configuration
-// directory and the only override is `NOTECRAFT_CONFIG_DIR` — a process-wide
+// directory and the only override is `TEXTCRAFT_CONFIG_DIR` — a process-wide
 // variable that tests running in parallel must not set. The serialisation,
 // restart, and restore behaviour above is the same code either way; what is left
 // unverified here is the directory lookup itself.

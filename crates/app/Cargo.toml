@@ -1,6 +1,6 @@
 [package]
 name = "nc-app"
-description = "NoteCraft — a fast, modern text and Markdown editor"
+description = "TextCraft — a fast, modern text and Markdown editor"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,9 +8,10 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
-# The executable. Named `notepad` on Windows targets, `notecraft` elsewhere.
+# The executable. Not `notepad`: that is Windows' own program, and an installer
+# registering that name would take over `Win+R notepad`.
 [[bin]]
-name = "notepad"
+name = "textcraft"
 path = "src/main.rs"
 
 [lib]
@@ -23,3 +24,11 @@ anyhow.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+# Printing `--help` / `--version` from a release build, which has no console of its own.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }
+
+# The icon and version information embedded in the .exe.
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"

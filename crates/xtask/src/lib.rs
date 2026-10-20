@@ -1,4 +1,4 @@
-//! Maintainer tasks for the NoteCraft workspace.
+//! Maintainer tasks for the TextCraft workspace.
 //!
 //! This project is deliberately Rust-only. Build, test, and maintenance
 //! automation all live here so there is a single implementation language and
@@ -275,7 +275,7 @@ serde = { version = \"1\" }
 
     fn scratch_workspace(tag: &str) -> PathBuf {
         let root =
-            std::env::temp_dir().join(format!("notecraft-xtask-test-{}-{tag}", std::process::id()));
+            std::env::temp_dir().join(format!("textcraft-xtask-test-{}-{tag}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join("crates")).unwrap();
         fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\n").unwrap();

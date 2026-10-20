@@ -105,6 +105,7 @@ impl Windows {
                 ViewportBuilder::default()
                     .with_title(title)
                     .with_decorations(false)
+                    .with_icon(crate::ui::app_icon::window_icon(64))
                     .with_inner_size([900.0, 600.0]),
                 |ui, _class| {
                     draw(&mut window.shell, ui);
@@ -144,8 +145,8 @@ impl Window {
             shell.active = 0;
         }
         Self {
-            id: ViewportId(Id::new(("notecraft_window", number))),
-            title: format!("NoteCraft — Window {number}"),
+            id: ViewportId(Id::new(("textcraft_window", number))),
+            title: format!("TextCraft — Window {number}"),
             shell,
         }
     }
@@ -176,7 +177,7 @@ mod tests {
         // the window the user used — so one that cannot be read is reported there —
         // and the window that shows it is the one that opens next.
         let path =
-            std::env::temp_dir().join(format!("notecraft-window-open-{}", std::process::id()));
+            std::env::temp_dir().join(format!("textcraft-window-open-{}", std::process::id()));
         std::fs::write(&path, "hello").expect("a file");
 
         let mut windows = Windows::new();

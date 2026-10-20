@@ -1,9 +1,10 @@
-//! NoteCraft application crate.
+//! TextCraft application crate.
 //!
 //! Owns command-line handling, logging setup, and the startup/shutdown
 //! lifecycle. The window itself is created by `nc-platform`.
 
 pub mod cli;
+mod console;
 pub mod lifecycle;
 pub mod logging;
 
@@ -12,17 +13,17 @@ use std::process::ExitCode;
 
 /// Text shown for `--help` and on a usage error.
 pub const USAGE: &str = "\
-NoteCraft - a fast, modern text and Markdown editor
+TextCraft - a fast, modern text and Markdown editor
 
 Usage:
-    notepad [options] [file ...]
+    textcraft [options] [file ...]
 
 Options:
     -h, --help       Show this help and exit
     -v, --version    Show version and exit
     --               Treat every following argument as a file path
 
-With no file arguments, NoteCraft starts with a single untitled document.
+With no file arguments, TextCraft starts with a single untitled document.
 ";
 
 /// Entry point used by `main`. Reads the process arguments.
@@ -39,6 +40,7 @@ where
     let cli = match cli::parse(args) {
         Ok(cli) => cli,
         Err(err) => {
+            console::attach_parent();
             eprintln!("error: {err}");
             eprintln!();
             eprint!("{USAGE}");
@@ -47,12 +49,14 @@ where
     };
 
     if cli.show_help {
+        console::attach_parent();
         print!("{USAGE}");
         return ExitCode::SUCCESS;
     }
 
     if cli.show_version {
-        println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+        console::attach_parent();
+        println!("TextCraft {}", env!("CARGO_PKG_VERSION"));
         return ExitCode::SUCCESS;
     }
 
@@ -73,7 +77,7 @@ mod tests {
     use super::*;
 
     fn args(items: &[&str]) -> Vec<OsString> {
-        std::iter::once("notepad")
+        std::iter::once("textcraft")
             .chain(items.iter().copied())
             .map(OsString::from)
             .collect()

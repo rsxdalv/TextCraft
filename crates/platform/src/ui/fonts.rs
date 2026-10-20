@@ -88,7 +88,7 @@ fn carried(choice: &str) -> bool {
 
 /// The key a context remembers its installed face under.
 fn installed_key() -> egui::Id {
-    egui::Id::new("notecraft-installed-font")
+    egui::Id::new("textcraft-installed-font")
 }
 
 /// Points the document face at `choice`, registering the shipped files the first time
@@ -115,6 +115,18 @@ pub fn apply(ctx: &Context, choice: &str) {
     // Start from `egui`'s defaults so the built-in faces stay registered — they are the
     // fallback every chain ends in — then lay the shipped families over the top.
     let mut fonts = FontDefinitions::default();
+    // The interface face. Windows' own UI font is used when the machine has it — read
+    // from the system, never bundled — so the chrome looks like the rest of the desktop;
+    // elsewhere `egui`'s built-in proportional face stays.
+    if let Some(bytes) = system_ui_font() {
+        fonts.font_data.insert(
+            "Segoe UI".to_owned(),
+            FontData::from_owned(bytes.clone()).into(),
+        );
+        if let Some(chain) = fonts.families.get_mut(&FontFamily::Proportional) {
+            chain.insert(0, "Segoe UI".to_owned());
+        }
+    }
     for (name, bytes) in FILES {
         fonts
             .font_data
@@ -132,6 +144,21 @@ pub fn apply(ctx: &Context, choice: &str) {
 
     ctx.set_fonts(fonts);
     ctx.data_mut(|data| data.insert_temp(key, wanted.to_owned()));
+}
+
+/// The bytes of the operating system's UI font, if this machine has one.
+fn system_ui_font() -> Option<&'static Vec<u8>> {
+    static FONT: std::sync::OnceLock<Option<Vec<u8>>> = std::sync::OnceLock::new();
+    FONT.get_or_init(|| {
+        let windir = std::env::var_os("WINDIR")?;
+        std::fs::read(
+            std::path::Path::new(&windir)
+                .join("Fonts")
+                .join("segoeui.ttf"),
+        )
+        .ok()
+    })
+    .as_ref()
 }
 
 /// Brings a context up with the default face, for the moment before its first frame —

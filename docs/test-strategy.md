@@ -1,4 +1,4 @@
-# Test Strategy — NoteCraft
+# Test Strategy — TextCraft
 
 "Done" is proven by tests. This document defines how it is measured.
 

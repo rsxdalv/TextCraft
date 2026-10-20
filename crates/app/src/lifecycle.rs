@@ -10,7 +10,7 @@ use crate::cli::Cli;
 use nc_platform::{StartupOptions, run as platform_run};
 
 /// Display name used in window titles and logs.
-pub const APP_NAME: &str = "NoteCraft";
+pub const APP_NAME: &str = "TextCraft";
 
 /// Run the application to completion. Blocks for the lifetime of the UI on a
 /// host with a native window; returns immediately otherwise.
@@ -49,7 +49,7 @@ mod tests {
 
     #[test]
     fn untitled_when_no_file() {
-        assert_eq!(window_title(&Cli::default()), "Untitled - NoteCraft");
+        assert_eq!(window_title(&Cli::default()), "Untitled - TextCraft");
     }
 
     #[test]
@@ -58,6 +58,6 @@ mod tests {
             files: vec![PathBuf::from("notes.txt"), PathBuf::from("other.txt")],
             ..Cli::default()
         };
-        assert_eq!(window_title(&cli), "notes.txt - NoteCraft");
+        assert_eq!(window_title(&cli), "notes.txt - TextCraft");
     }
 }

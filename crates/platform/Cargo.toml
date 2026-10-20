@@ -1,6 +1,6 @@
 [package]
 name = "nc-platform"
-description = "NoteCraft shell: the egui/eframe window, menus, toolbar, status bar, and settings"
+description = "TextCraft shell: the egui/eframe window, menus, toolbar, status bar, and settings"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -19,3 +19,7 @@ tracing.workspace = true
 # The window shell. egui draws the UI and eframe hosts the window and event loop.
 eframe.workspace = true
 egui.workspace = true
+egui_extras.workspace = true
+rfd.workspace = true
+image.workspace = true
+craft-ui.workspace = true

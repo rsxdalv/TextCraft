@@ -1,4 +1,4 @@
-//! Where NoteCraft keeps its per-user files.
+//! Where TextCraft keeps its per-user files.
 //!
 //! Two files live here: the session ([`crate::ui::session`], which documents are
 //! open) and the settings ([`crate::ui::settings`], which is how the shell looks and
@@ -14,29 +14,29 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-/// The directory NoteCraft keeps its files in, or `None` when there is nowhere to
+/// The directory TextCraft keeps its files in, or `None` when there is nowhere to
 /// put them.
 ///
-/// `NOTECRAFT_CONFIG_DIR` overrides it, which is what tests and a portable install
+/// `TEXTCRAFT_CONFIG_DIR` overrides it, which is what tests and a portable install
 /// use; otherwise the platform's usual per-user configuration directory, and nothing
 /// when none can be found — which is not an error, just a run that keeps no files.
 pub(crate) fn directory() -> Option<PathBuf> {
-    if let Some(directory) = non_empty(std::env::var_os("NOTECRAFT_CONFIG_DIR")) {
+    if let Some(directory) = non_empty(std::env::var_os("TEXTCRAFT_CONFIG_DIR")) {
         return Some(PathBuf::from(directory));
     }
     if cfg!(windows) {
         if let Some(appdata) = non_empty(std::env::var_os("APPDATA")) {
-            return Some(PathBuf::from(appdata).join("NoteCraft"));
+            return Some(PathBuf::from(appdata).join("TextCraft"));
         }
     }
     if let Some(xdg) = non_empty(std::env::var_os("XDG_CONFIG_HOME")) {
-        return Some(PathBuf::from(xdg).join("notecraft"));
+        return Some(PathBuf::from(xdg).join("textcraft"));
     }
     non_empty(std::env::var_os("HOME"))
-        .map(|home| PathBuf::from(home).join(".config").join("notecraft"))
+        .map(|home| PathBuf::from(home).join(".config").join("textcraft"))
 }
 
-/// One of NoteCraft's files, by name, in [`directory`].
+/// One of TextCraft's files, by name, in [`directory`].
 ///
 /// `None` means there is nowhere for it to be: reads find nothing, writes do nothing,
 /// and the application runs without persistence rather than failing.
@@ -60,7 +60,7 @@ fn non_empty(value: Option<OsString>) -> Option<OsString> {
 
 /// An empty override is no override.
 ///
-/// A launcher that exports `NOTECRAFT_CONFIG_DIR=` without a value would otherwise
+/// A launcher that exports `TEXTCRAFT_CONFIG_DIR=` without a value would otherwise
 /// put the files at the filesystem root, so an empty variable falls through to the
 /// platform directory like an unset one. [`non_empty`] is what makes that true, and
 /// the case is named here because nothing else in the file explains it.

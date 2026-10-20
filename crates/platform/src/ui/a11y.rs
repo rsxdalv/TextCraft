@@ -66,15 +66,6 @@ pub fn described(ctx: &Context, id: Id, text: impl Into<Box<str>>) {
     ctx.accesskit_node_builder(id, |node| node.set_description(text));
 }
 
-/// Marks a control this build draws but does not act on as unavailable.
-///
-/// The alternative is to leave it out of the tab order, which is worse: the
-/// screen then disagrees with the picture about what is on it. Announcing it as
-/// unavailable is what is true of it.
-pub fn inert(ctx: &Context, id: Id) {
-    ctx.accesskit_node_builder(id, |node| node.set_disabled());
-}
-
 /// Names a string this shell painted, with `rect` as what the screen reader
 /// points at.
 ///
@@ -142,7 +133,6 @@ mod tests {
         description: Option<String>,
         selected: Option<bool>,
         toggled: Option<bool>,
-        disabled: bool,
         /// Whether Tab stops here, which is what the focus order is about.
         focusable: bool,
         bounds: Option<egui::accesskit::Rect>,
@@ -196,7 +186,6 @@ mod tests {
                 toggled: node
                     .toggled()
                     .map(|toggled| matches!(toggled, egui::accesskit::Toggled::True)),
-                disabled: node.is_disabled(),
                 focusable: node.supports_action(egui::accesskit::Action::Focus),
                 bounds: node.bounds(),
             });
@@ -318,7 +307,6 @@ mod tests {
         assert_eq!(
             focus_order(&mut shell),
             [
-                "Back",
                 "Untitled",
                 "Close Untitled",
                 "New tab",
@@ -364,7 +352,7 @@ mod tests {
         // see, so the tab says it in words.
         shell.active = 0;
         append(&mut shell.tabs[0], "edited");
-        let edited = named(&mut shell, "Untitled");
+        let edited = named(&mut shell, "edited");
         assert_eq!(edited.description.as_deref(), Some("Unsaved changes"));
     }
 
@@ -378,17 +366,6 @@ mod tests {
         let close = named(&mut shell, "Close note.txt");
         assert_eq!(close.role, Role::Button);
         assert!(close.focusable, "a close button is reachable by keyboard");
-    }
-
-    #[test]
-    fn the_inert_back_arrow_is_announced_as_unavailable() {
-        // The capture has a back arrow in the title bar and this build has
-        // nowhere to go back to. Leaving it out of the tree would put the screen
-        // at odds with the picture; saying it is unavailable is what is true.
-        let mut shell = Shell::new();
-        let back = named(&mut shell, "Back");
-        assert!(back.focusable);
-        assert!(back.disabled, "it is drawn, and it does nothing");
     }
 
     #[test]
@@ -486,7 +463,7 @@ mod tests {
         append(&mut shell.tabs[index], "# Heading\n\nSome text.");
         shell.tabs[index].formatted = true;
 
-        let document = named_role(&mut shell, Role::Document, "Untitled");
+        let document = named_role(&mut shell, Role::Document, "Heading");
         assert_eq!(
             document.value.as_deref(),
             Some("# Heading\n\nSome text."),
@@ -526,7 +503,7 @@ mod tests {
     impl Scratch {
         fn new(name: &str) -> Self {
             let directory =
-                std::env::temp_dir().join(format!("notecraft-a11y-{name}-{}", std::process::id()));
+                std::env::temp_dir().join(format!("textcraft-a11y-{name}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&directory);
             std::fs::create_dir_all(&directory).expect("a scratch directory");
             Self(directory)

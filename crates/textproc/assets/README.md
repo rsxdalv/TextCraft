@@ -1,6 +1,6 @@
 # The spelling dictionary
 
-`words.txt` is the whole of NoteCraft's spelling knowledge. `crates/textproc/src/spell.rs`
+`words.txt` is the whole of TextCraft's spelling knowledge. `crates/textproc/src/spell.rs`
 embeds it at build time (`include_str!`), so a spell check needs no dictionary file at
 run time and pulls in no dictionary crate. `Settings ▸ Spell check` and `Edit ▸ Spelling
 suggestions` are the two places it reaches the screen; what "misspelled" means is written

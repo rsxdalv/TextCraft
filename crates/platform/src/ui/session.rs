@@ -31,7 +31,7 @@ use nc_textproc::{Encoding, TextFile};
 use crate::ui::state::{DocKind, Shell, Tab};
 
 /// The session file's format marker, which also fixes its version.
-const VERSION: &str = "notecraft-session 1";
+const VERSION: &str = "textcraft-session 1";
 
 /// The name of the session file inside the configuration directory.
 const FILE: &str = "session";
@@ -446,7 +446,7 @@ mod tests {
     impl Scratch {
         fn new(name: &str) -> Self {
             let directory = std::env::temp_dir()
-                .join(format!("notecraft-session-{name}-{}", std::process::id()));
+                .join(format!("textcraft-session-{name}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&directory);
             std::fs::create_dir_all(&directory).expect("a scratch directory");
             Self(directory)
@@ -511,7 +511,7 @@ mod tests {
     #[test]
     fn an_unknown_header_is_rejected() {
         assert_eq!(
-            Session::decode("notecraft-session 99\n").unwrap_err(),
+            Session::decode("textcraft-session 99\n").unwrap_err(),
             SessionError::Header
         );
         assert_eq!(Session::decode("").unwrap_err(), SessionError::Header);

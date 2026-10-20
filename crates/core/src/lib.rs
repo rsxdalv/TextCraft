@@ -1,4 +1,4 @@
-//! The NoteCraft document model.
+//! The TextCraft document model.
 //!
 //! This crate is the editing engine: the text buffer, the selection, the caret
 //! arithmetic, the undo history, the clipboard interface, soft wrap, and the

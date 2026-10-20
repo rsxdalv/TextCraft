@@ -1,6 +1,6 @@
 [package]
 name = "nc-core"
-description = "NoteCraft document model: text buffer, selection, caret, undo, clipboard"
+description = "TextCraft document model: text buffer, selection, caret, undo, clipboard"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

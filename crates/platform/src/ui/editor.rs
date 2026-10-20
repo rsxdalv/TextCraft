@@ -24,7 +24,9 @@
 use std::ops::Range;
 
 use egui::text::{CCursor, CCursorRange, CharIndex};
-use egui::{Color32, Event, FontId, Galley, Key, Margin, Shape, WidgetType};
+use egui::{Color32, Event, FontId, Galley, Key, Shape, WidgetType};
+
+use crate::ui::spacing;
 use nc_core::Document;
 
 use crate::ui::a11y;
@@ -33,7 +35,7 @@ use crate::ui::state::{Shell, Tab};
 
 /// The editor widget's id. Fixed so a queued selection can be stored under it
 /// and tests can read the caret back.
-pub const EDITOR_ID: &str = "notecraft_editor";
+pub const EDITOR_ID: &str = "textcraft_editor";
 
 /// The colour a misspelled word is underlined in (`NC-P004`). Chosen distinct
 /// from the accent so a squiggle is never read as the active-tab or selection
@@ -83,7 +85,7 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui) {
         .frame(
             egui::Frame::NONE
                 .fill(shell.palette.bg)
-                .inner_margin(Margin::symmetric(12, 10)),
+                .inner_margin(spacing::margin(spacing::LG, spacing::MD)),
         )
         .show(ui, |ui| {
             let index = shell.active;
@@ -147,9 +149,9 @@ fn source_view(
     // because with wrapping off a long line is wider than any window and is the text
     // edit's real content width, not an overflow to be clipped away.
     //
-    // `auto_shrink` off so the area fills the panel: shrinking to the content would
-    // leave the space under a short document outside the widget, so a click there would
-    // reach nothing.
+    // `auto_shrink` off so the area fills the panel, and the text edit is given the
+    // panel's whole size as its minimum, so the empty space under (and beside) a short
+    // document is part of the widget: a click anywhere in the page starts editing there.
     //
     // The height the area is about to fill is how far the eye moves on a Page key; read
     // it now, before the area claims the space, so paging knows how many rows a screenful
@@ -168,7 +170,9 @@ fn source_view(
                     .font(font.clone())
                     .frame(egui::Frame::NONE);
                 if wrap {
-                    edit.desired_width(ui.available_width()).show(ui)
+                    edit.desired_width(ui.available_width())
+                        .min_size(egui::vec2(ui.available_width(), viewport))
+                        .show(ui)
                 } else {
                     // Unwrapped, the editor has to be as wide as its widest line, and
                     // `egui` will not work that out for you: a `TextEdit` clamps its
@@ -180,7 +184,7 @@ fn source_view(
                     // therefore handed to the widget as `min_size`, the one input that
                     // outranks the clamp, and the area it sits in turns that width into
                     // a bar the user can drag.
-                    edit.min_size(egui::vec2(natural, 0.0))
+                    edit.min_size(egui::vec2(natural.max(ui.available_width()), viewport))
                         .desired_width(natural)
                         .show(ui)
                 }

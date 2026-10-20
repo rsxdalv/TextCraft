@@ -703,7 +703,7 @@ pub fn pump(shell: &mut Shell, ctx: &Context) {
 }
 
 /// Raises the outside-change prompt for the first document whose file changed on
-/// disk since NoteCraft read it (`NC-D008`, `docs/ui-reference.md` §9).
+/// disk since TextCraft read it (`NC-D008`, `docs/ui-reference.md` §9).
 ///
 /// The question is asked when the window gains focus, because that is when a
 /// program that had the foreground has finished writing. It never talks over a
@@ -1322,7 +1322,7 @@ mod tests {
     impl Scratch {
         fn new(name: &str) -> Self {
             let directory = std::env::temp_dir()
-                .join(format!("notecraft-actions-{name}-{}", std::process::id()));
+                .join(format!("textcraft-actions-{name}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&directory);
             std::fs::create_dir_all(&directory).expect("a scratch directory");
             Self(directory)

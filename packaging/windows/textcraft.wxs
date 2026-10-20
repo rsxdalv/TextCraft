@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  TextCraft MSI (WiX Toolset v5, installed as the dotnet tool "wix" 5.0.2).
+  Built by package.ps1:
+
+    wix build textcraft.wxs -arch x64 -d Version=1.2.3 -d BinDir=... -d IconPath=... -o out.msi
+
+  A per-machine install into Program Files, a Start Menu shortcut, an App Paths entry
+  (Win+R `textcraft`), and TextCraft offered under "Open with" for .txt, .md, .markdown and
+  .log, without taking over the user's default app for any of them.
+
+  UpgradeCode is fixed for TextCraft: never change it, or an upgrade installs side by side
+  with the old version instead of replacing it.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="TextCraft"
+      Manufacturer="TextCraft contributors"
+      Version="$(var.Version)"
+      UpgradeCode="D62A7952-8C65-4D86-AD4C-021F98E19620"
+      Scope="perMachine"
+      Compressed="yes"
+      Language="1033">
+    <SummaryInformation Description="TextCraft text editor" Manufacturer="TextCraft contributors" />
+    <!-- MSI versions are numeric, so 1.2.3-rc.1 and 1.2.3-rc.2 are both 1.2.3: allow
+         same-version upgrades so successive pre-releases replace each other. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+        DowngradeErrorMessage="A newer version of TextCraft is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="TextCraftIcon.ico" SourceFile="$(var.IconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="TextCraftIcon.ico" />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="TextCraft" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <Feature Id="Main" Title="TextCraft" Level="1">
+      <ComponentGroupRef Id="TextCraftFiles" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="TextCraftFiles" Directory="INSTALLFOLDER">
+      <Component Id="TextCraftApp" Guid="86F52D3F-78B5-4EA5-97B7-D69D2D9E19D4">
+        <File Id="TextCraftExe" Source="$(var.BinDir)\textcraft.exe" KeyPath="yes">
+          <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="TextCraft"
+              Description="TextCraft text editor" WorkingDirectory="INSTALLFOLDER" Advertise="yes"
+              Icon="TextCraftIcon.ico" IconIndex="0" />
+        </File>
+
+        <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\textcraft.exe" Value="[#TextCraftExe]" Type="string" />
+        <!-- Also answer to "notepad": Win+R, the Start menu search box and `start notepad` look
+             here first, so with TextCraft installed they open it instead of Windows Notepad.
+             Uninstalling removes the entry and Windows Notepad is back. The real notepad.exe
+             in System32 is not touched. -->
+        <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\notepad.exe" Value="[#TextCraftExe]" Type="string" />
+
+        <!-- How Explorer opens a file with TextCraft. Nothing here sets HKCR\.<ext>'s default
+             value, so the user's current default app is left alone. -->
+        <RegistryValue Root="HKLM" Key="Software\Classes\TextCraft.Document" Value="TextCraft Document" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\TextCraft.Document\DefaultIcon" Value="&quot;[#TextCraftExe]&quot;,0" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\TextCraft.Document\shell\open\command" Value="&quot;[#TextCraftExe]&quot; &quot;%1&quot;" Type="string" />
+
+        <!-- "Open with": Windows reads only the value names under OpenWithProgids; the data is
+             ignored (WiX rejects an empty Value, so it repeats the ProgId). -->
+        <RegistryValue Root="HKLM" Key="Software\Classes\.txt\OpenWithProgids" Name="TextCraft.Document" Value="TextCraft.Document" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.md\OpenWithProgids" Name="TextCraft.Document" Value="TextCraft.Document" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.markdown\OpenWithProgids" Name="TextCraft.Document" Value="TextCraft.Document" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.log\OpenWithProgids" Name="TextCraft.Document" Value="TextCraft.Document" Type="string" />
+
+        <!-- Settings > Default apps: lets the user pick TextCraft for these types. -->
+        <RegistryValue Root="HKLM" Key="Software\TextCraft\Capabilities" Name="ApplicationName" Value="TextCraft" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\TextCraft\Capabilities" Name="ApplicationDescription" Value="A fast, modern text and Markdown editor" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\TextCraft\Capabilities\FileAssociations" Name=".txt" Value="TextCraft.Document" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\TextCraft\Capabilities\FileAssociations" Name=".md" Value="TextCraft.Document" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\TextCraft\Capabilities\FileAssociations" Name=".markdown" Value="TextCraft.Document" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\TextCraft\Capabilities\FileAssociations" Name=".log" Value="TextCraft.Document" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\RegisteredApplications" Name="TextCraft" Value="Software\TextCraft\Capabilities" Type="string" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

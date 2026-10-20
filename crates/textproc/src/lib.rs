@@ -1,4 +1,4 @@
-//! How NoteCraft reads a file's bytes and writes them back.
+//! How TextCraft reads a file's bytes and writes them back.
 //!
 //! This crate is the rest of the text engine: `nc-core` holds the text and
 //! knows nothing about files, and `nc-textproc` holds the files and knows
