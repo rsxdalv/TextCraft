@@ -975,13 +975,11 @@ pub const MENU_BAR: &[MenuBar] = &[
             MenuNode::Command(CommandId("cmd.file.new_tab")),
             MenuNode::Command(CommandId("cmd.file.new_window")),
             MenuNode::Command(CommandId("cmd.file.new_markdown")),
-            MenuNode::Separator,
             MenuNode::Command(CommandId("cmd.file.open")),
             MenuNode::Submenu(
                 "Recent",
                 &[MenuNode::Command(CommandId("cmd.file.recent_empty"))],
             ),
-            MenuNode::Separator,
             MenuNode::Command(CommandId("cmd.file.save")),
             MenuNode::Command(CommandId("cmd.file.save_as")),
             MenuNode::Command(CommandId("cmd.file.save_all")),

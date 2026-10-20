@@ -38,7 +38,7 @@ pub enum Question {
         /// The characters with no representation, in the order they appear.
         characters: Vec<char>,
     },
-    /// The file changed on disk since NoteCraft read or wrote it.
+    /// The file changed on disk since TextCraft read or wrote it.
     ///
     /// Whether a prompt is raised at all is a design decision; this is the
     /// state the question would be asked about.
@@ -76,7 +76,7 @@ pub fn before_overwriting(path: impl AsRef<Path>) -> Option<Question> {
     })
 }
 
-/// Whether the file has changed on disk since NoteCraft read or wrote it.
+/// Whether the file has changed on disk since TextCraft read or wrote it.
 pub fn after_outside_change(file: &TextFile) -> Option<Question> {
     match file.external_change() {
         ExternalChange::None => None,

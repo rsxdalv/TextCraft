@@ -1,6 +1,6 @@
 [package]
 name = "nc-commands"
-description = "NoteCraft command registry: the single authoritative specification of commands, menus, shortcuts, and availability"
+description = "TextCraft command registry: the single authoritative specification of commands, menus, shortcuts, and availability"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -1,4 +1,4 @@
-# Architecture — NoteCraft
+# Architecture — TextCraft
 
 A fast, modern text and Markdown editor in Rust, drawn with `egui` and hosted by
 `eframe`. This document defines the module layout and boundaries. It is expected
@@ -26,7 +26,7 @@ the change.
 ## 2. Workspace layout
 
 ```
-NoteCraft/
+TextCraft/
 ├── Cargo.toml                 # workspace
 ├── rust-toolchain.toml        # pinned toolchain
 ├── crates/
@@ -35,7 +35,7 @@ NoteCraft/
 │   ├── markdown/              # nc-markdown — loss-keeping Markdown parse and formatting
 │   ├── commands/              # nc-commands — command registry, menus, shortcuts
 │   ├── platform/              # nc-platform — the egui/eframe shell
-│   ├── app/                   # nc-app — binary: startup, logging, lifecycle -> notepad
+│   ├── app/                   # nc-app — binary: startup, logging, lifecycle -> textcraft
 │   └── xtask/                 # repository tasks (cargo xtask check-boundaries)
 ├── docs/                      # this spec set
 └── tests/                     # integration + fixtures (see test-strategy.md)

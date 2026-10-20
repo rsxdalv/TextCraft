@@ -39,7 +39,7 @@ impl std::error::Error for DecodeError {}
 /// Characters that cannot be written in the encoding a document is saved in.
 ///
 /// This is the ANSI case: every character outside the code page has no byte.
-/// The behaviour is a design decision, so NoteCraft asks instead
+/// The behaviour is a design decision, so TextCraft asks instead
 /// of guessing: [`crate::encode`] reports the characters, and
 /// [`crate::encode_lossy`] writes them as `?` once the user has said to.
 #[derive(Debug, Clone, PartialEq, Eq)]

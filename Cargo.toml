@@ -11,12 +11,12 @@ members = [
 ]
 
 [workspace.package]
-version = "0.0.0"
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
 repository = "https://github.com/CMSpeedAU/NoteCraft"
-authors = ["NoteCraft contributors"]
+authors = ["TextCraft contributors"]
 
 [workspace.dependencies]
 nc-commands = { path = "crates/commands" }
@@ -35,6 +35,14 @@ unicode-segmentation = "1.12"
 # version the port was written against.
 eframe = "0.36"
 egui = "0.36"
+# The operating system's own Open / Save As dialogs.
+rfd = "0.17"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+egui_extras = { version = "0.36", default-features = false, features = ["svg"] }
+
+# Shared egui components from the Craft suite (icons, tab fitting, toolbar fitting).
+# Pinned to the revision GridCraft builds against.
+craft-ui = { git = "https://github.com/storytold/craft-libs", rev = "d27646a5f7c8b4fc85d9dd3213b8c88b58e0088d" }
 
 # Test-only. `proptest` is used for the property tests named in
 # `docs/test-strategy.md` §5.

@@ -1,6 +1,6 @@
 //! `NC-M005` Headings.
 //!
-//! Acceptance: **"ATX output"**. NoteCraft writes `#` through `######` followed by
+//! Acceptance: **"ATX output"**. TextCraft writes `#` through `######` followed by
 //! one space, which is what these tests compare against, on whole strings.
 
 use nc_markdown::{BlockKind, Heading, Range, blocks, set_heading};

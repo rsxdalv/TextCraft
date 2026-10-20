@@ -1,6 +1,6 @@
 //! Encodings: what the bytes of a file mean, and how to write them back.
 //!
-//! NoteCraft reads ANSI or UTF-8 (with or without a byte order mark), and
+//! TextCraft reads ANSI or UTF-8 (with or without a byte order mark), and
 //! UTF-16 and UTF-32 in either byte order — the encodings the reference reads
 //! and writes (`docs/ui-reference.md`, NC-D001/NC-D002). A new document
 //! is written as UTF-8 without a BOM, and the encoding a file was read with is
@@ -55,7 +55,7 @@ pub enum Encoding {
 }
 
 impl Encoding {
-    /// Every encoding NoteCraft reads, in the order the Save As list shows them.
+    /// Every encoding TextCraft reads, in the order the Save As list shows them.
     pub const ALL: &'static [Self] = &[
         Self::Ansi,
         Self::Utf8,
@@ -91,7 +91,7 @@ impl Encoding {
 
     /// Whether the encoding needs a byte order mark to be recognised.
     ///
-    /// A UTF-8 BOM is optional and NoteCraft writes none for a new document;
+    /// A UTF-8 BOM is optional and TextCraft writes none for a new document;
     /// a wide encoding without one cannot be told from ANSI, so a file saved in
     /// one always gets its mark.
     pub const fn needs_bom(self) -> bool {
@@ -105,7 +105,7 @@ impl std::fmt::Display for Encoding {
     }
 }
 
-/// How NoteCraft decided what a file's bytes are.
+/// How TextCraft decided what a file's bytes are.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Evidence {
     /// A UTF-8 byte order mark.

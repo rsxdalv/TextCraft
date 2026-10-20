@@ -1,4 +1,4 @@
-//! NoteCraft command registry.
+//! TextCraft command registry.
 //!
 //! This crate is the **single authoritative specification** of the
 //! application's commands: their labels, menu placement, default shortcuts,

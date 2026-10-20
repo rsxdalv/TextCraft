@@ -6,8 +6,8 @@ A fast, modern text and Markdown editor for the desktop, written in Rust.
 **[Source](https://github.com/rsxdalv/TextCraft)** ·
 **[Contributing](CONTRIBUTING.md)**
 
-> TextCraft is in early development and has no release yet. You can build it
-> from source today; see [Try it](#try-it).
+**[Download the latest release](https://github.com/rsxdalv/TextCraft/releases/latest)** for Windows, macOS or Linux; see
+[Download](#download). TextCraft is in early development.
 
 ![TextCraft showing a document in a tab, with the menu bar, formatting toolbar and status bar](site/screenshot.png)
 
@@ -43,7 +43,25 @@ A fast, modern text and Markdown editor for the desktop, written in Rust.
 - One title row with the tabs and window buttons, Alt access keys on every menu,
   the system's own Open and Save dialogs, and light and dark themes.
 
-## Try it
+## Download
+
+Packages are on the [releases page](https://github.com/rsxdalv/TextCraft/releases/latest):
+
+| Platform | Package |
+| --- | --- |
+| Windows x64 | `.msi` installer, or a portable `.zip` |
+| macOS (Apple silicon and Intel) | `TextCraft.app` in a `.zip` |
+| Linux x86_64 | `.tar.gz` with the program, a `.desktop` launcher and an icon (needs glibc 2.39 or newer) |
+
+The builds are not code-signed, so the first launch asks you to confirm it. On Windows,
+choose **More info**, then **Run anyway**. On macOS, open System Settings, Privacy &
+Security, and choose **Open Anyway**. Each release lists SHA-256 checksums.
+
+The Windows installer also registers TextCraft under the name `notepad`, so Win+R and the
+Start menu's "notepad" open it instead of Windows Notepad. Uninstalling restores Notepad,
+and the real `notepad.exe` is never touched.
+
+## Build it yourself
 
 You need [Rust](https://rustup.rs/) and Git on Windows, macOS or Linux.
 
@@ -53,7 +71,7 @@ cd TextCraft
 cargo run --release -p nc-app
 ```
 
-The executable is `notepad` on Windows and `notecraft` elsewhere.
+The executable is `textcraft`.
 
 ## Contributing
 

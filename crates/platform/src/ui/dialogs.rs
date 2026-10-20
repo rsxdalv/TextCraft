@@ -310,9 +310,51 @@ fn spelling(shell: &mut Shell, ctx: &Context) {
     }
 }
 
+/// Open / Save As through the operating system's own dialog: its places, search,
+/// previews and keyboard handling, which a hand-drawn list would never match. It is
+/// modal and blocks this frame until it is answered; the in-window dialog below is
+/// what runs where there is no one to answer a native one (tests).
+fn native_file_dialog(shell: &mut Shell) {
+    let Some(dialog) = shell.file_dialog.as_mut() else {
+        return;
+    };
+    let picker = rfd::FileDialog::new().set_directory(&dialog.directory);
+    let picked = match dialog.mode {
+        FileDialogMode::Open => picker
+            .set_title("Open")
+            .add_filter("Text documents", &["txt", "md", "markdown", "log"])
+            .add_filter("All files", &["*"])
+            .pick_file(),
+        FileDialogMode::SaveAs => picker
+            .set_title("Save as")
+            .set_file_name(dialog.file_name.as_str())
+            .add_filter("Text documents", &["txt"])
+            .add_filter("Markdown", &["md"])
+            .add_filter("All files", &["*"])
+            .save_file(),
+    };
+    match picked {
+        Some(path) => {
+            if let Some(parent) = path.parent() {
+                dialog.directory = parent.to_path_buf();
+            }
+            dialog.file_name = path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            actions::confirm_file_dialog(shell);
+        }
+        None => shell.file_dialog = None,
+    }
+}
+
 /// The Open / Save As dialog (`docs/ui-reference.md` §7): one frame in two
 /// modes, differing in their title, primary button, and encoding default.
 fn file_dialog(shell: &mut Shell, ctx: &Context) {
+    if shell.native_dialogs {
+        native_file_dialog(shell);
+        return;
+    }
     let Some(dialog) = shell.file_dialog.as_mut() else {
         return;
     };

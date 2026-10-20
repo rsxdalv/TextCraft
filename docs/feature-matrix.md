@@ -562,7 +562,7 @@ it was asked for — the boundary is stated, not glossed, exactly as the painted
 verified to the frame rather than to the pixels.
 
 **The outside-change question was the last prompt with no box.** The engine could
-already tell that the bytes on disk were no longer the ones NoteCraft read
+already tell that the bytes on disk were no longer the ones TextCraft read
 (`NC-D008`, `ExternalChange::Modified` / `Removed`), and `nc-textproc::prompt`
 already turned that into a `Question::OutsideChange`; what was missing was the
 shell half §9 specifies. There is now a `Prompt::OutsideChange`, its card, and
@@ -579,7 +579,7 @@ had the foreground has finished writing, so a window kept in front does not
 re-read every document every frame; the trigger and the Cancel semantics are
 recorded in §9. It is never raised over a question or a dialog that is already
 up. A restart takes the file on disk as its baseline for a restored unsaved
-document (`TextFile::restore` now reads it), so coming back to NoteCraft does not
+document (`TextFile::restore` now reads it), so coming back to TextCraft does not
 report a change that happened before the session was written. The shell
 acceptance tests drive the real state: a changed file raises the
 card and changes nothing yet; a focused frame after an outside write raises
@@ -589,7 +589,7 @@ removing the dirty mark, the adopted baseline, the focus transition and the
 already-asked guard in turn.
 
 **Two M8 rows are `OUT_OF_SCOPE` by a recorded decision, not left unstarted.** `NC-P008`
-(file association) would make NoteCraft a desktop default for text files, which means
+(file association) would make TextCraft a desktop default for text files, which means
 writing the user's `~/.local/share/applications` and changing what double-clicking a `.txt`
 opens — a mutation of the desktop that a notes editor should not do quietly, that is
 entirely OS-specific, and that the roadmap itself hedged as "if in scope." `NC-P010` is

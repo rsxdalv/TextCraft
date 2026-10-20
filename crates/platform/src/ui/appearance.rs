@@ -32,7 +32,7 @@ use egui::epaint::ColorMode;
 use egui::{Color32, Rect, Shape, Theme};
 
 /// The tab strip's height, as `title_bar` sizes each tab.
-const TAB_HEIGHT: f32 = 34.0;
+const TAB_HEIGHT: f32 = 30.0;
 /// The unsaved-changes dot's radius, as `title_bar` paints it.
 const DOT_RADIUS: f32 = 3.0;
 
@@ -174,14 +174,14 @@ fn accent_underlines(output: &egui::FullOutput) -> Vec<Rect> {
         .collect()
 }
 
-/// The unsaved-changes dots: accent-coloured circles of the marker's radius inside
+/// The unsaved-changes dots: grey (dim-text) circles of the marker's radius inside
 /// the title bar band.
 ///
 /// Filtered by radius and band because the same shell paints other circles — the
 /// account avatar and the settings toggles — and neither is a dirty marker.
 fn dirty_dots(output: &egui::FullOutput) -> Vec<egui::Pos2> {
     let band = super::title_bar::HEIGHT;
-    let accent = theme::Palette::DARK.accent;
+    let dim = theme::Palette::DARK.text_dim;
     output
         .shapes
         .iter()
@@ -189,7 +189,7 @@ fn dirty_dots(output: &egui::FullOutput) -> Vec<egui::Pos2> {
             Shape::Circle(shape)
                 if (shape.radius - DOT_RADIUS).abs() < 0.01
                     && shape.center.y <= band
-                    && shape.fill == accent =>
+                    && shape.fill == dim =>
             {
                 Some(shape.center)
             }
@@ -253,7 +253,11 @@ fn tabs_are_drawn_the_height_the_shell_sizes_them() {
 }
 
 #[test]
-fn exactly_one_tab_carries_the_accent_underline_and_it_is_the_active_one() {
+fn only_the_active_tab_is_filled_and_none_is_underlined_or_highlighted() {
+    // The active tab runs into the menu bar below it, so it takes the menu bar's
+    // colour; the others are the title bar's own colour, hovered or not, and carry no
+    // underline. Reported against the Windows reference, where a tab strip that lit up
+    // under the pointer read as noise.
     for active in 0..3 {
         let mut shell = Shell::new();
         while shell.tabs.len() < 3 {
@@ -262,26 +266,25 @@ fn exactly_one_tab_carries_the_accent_underline_and_it_is_the_active_one() {
         shell.active = active;
 
         let output = paint(&mut shell);
-        let tabs = tab_rects(&output);
-        let underlines = accent_underlines(&output);
-
-        // Each underline is inset 6pt from the sides of the tab it marks, so a
-        // tab counts as underlined when some underline lies inside its width.
-        let marked: Vec<usize> = tabs
-            .iter()
+        let palette = shell.palette;
+        let fills: Vec<(usize, egui::Color32)> = filled_rects(&output)
+            .into_iter()
+            .filter(|(rect, _)| (rect.height() - TAB_HEIGHT).abs() < 0.01)
             .enumerate()
-            .filter(|(_, tab)| {
-                underlines.iter().any(|underline| {
-                    underline.min.x >= tab.min.x && underline.max.x <= tab.max.x + 0.01
-                })
-            })
-            .map(|(index, _)| index)
+            .map(|(index, (_, fill))| (index, fill))
             .collect();
-
-        assert_eq!(
-            marked,
-            vec![active],
-            "`docs/ui-reference.md` §1: the active tab is underlined, and only it"
+        assert_eq!(fills.len(), 3, "one tab per document");
+        for (index, fill) in fills {
+            let expected = if index == active {
+                palette.chrome
+            } else {
+                palette.title
+            };
+            assert_eq!(fill, expected, "tab {index} with tab {active} active");
+        }
+        assert!(
+            accent_underlines(&output).is_empty(),
+            "the active tab is not underlined"
         );
     }
 }
@@ -540,7 +543,10 @@ fn editor_layout(output: &egui::FullOutput, needle: &str) -> (usize, f32) {
         .shapes
         .iter()
         .find_map(|clipped| match &clipped.shape {
-            Shape::Text(shape) if shape.galley.text().contains(needle) => {
+            Shape::Text(shape)
+                if shape.galley.text().contains(needle)
+                    && shape.pos.y > super::title_bar::HEIGHT =>
+            {
                 Some((shape.galley.rows.len(), shape.galley.rect.width()))
             }
             _ => None,
@@ -977,7 +983,10 @@ fn advance_of(output: &egui::FullOutput, needle: &str) -> f32 {
         .shapes
         .iter()
         .find_map(|clipped| match &clipped.shape {
-            Shape::Text(shape) if shape.galley.text().contains(needle) => {
+            Shape::Text(shape)
+                if shape.galley.text().contains(needle)
+                    && shape.pos.y > super::title_bar::HEIGHT =>
+            {
                 Some(shape.galley.clone())
             }
             _ => None,
@@ -1265,7 +1274,7 @@ fn turning_formatting_off_takes_the_formatting_toolbar_with_it() {
         "the menus went away with a toolbar they are not part of"
     );
     assert!(
-        paints(&output, "\u{2728}"),
+        paints(&output, "\u{2699}"),
         "the service controls went away with a toolbar they are not part of"
     );
 }
@@ -1535,7 +1544,7 @@ struct Scratch(std::path::PathBuf);
 impl Scratch {
     fn new(name: &str) -> Self {
         let directory = std::env::temp_dir().join(format!(
-            "notecraft-appearance-{name}-{}",
+            "textcraft-appearance-{name}-{}",
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&directory);

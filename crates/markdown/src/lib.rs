@@ -1,4 +1,4 @@
-//! NoteCraft's Markdown formatting model — `docs/architecture.md` §6.
+//! TextCraft's Markdown formatting model — `docs/architecture.md` §6.
 //!
 //! Three rules from that section shape the whole crate:
 //!

@@ -22,7 +22,7 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn new(name: &str) -> Self {
         let directory =
-            std::env::temp_dir().join(format!("notecraft-{name}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("textcraft-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a scratch directory");
         Self(directory)

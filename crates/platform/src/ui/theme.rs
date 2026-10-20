@@ -18,7 +18,9 @@
 //! step off the extreme — with the accent taken from Windows 11's light-mode blue.
 //! `docs/ui-reference.md` §4 records it as a decision.
 
-use egui::{Color32, Context, CornerRadius, Margin, Stroke, Theme, Vec2};
+use egui::{Color32, Context, CornerRadius, Stroke, Theme, Vec2};
+
+use crate::ui::spacing;
 
 use crate::ui::state::AppTheme;
 
@@ -30,8 +32,13 @@ use crate::ui::state::AppTheme;
 pub struct Palette {
     /// The editor and window background, and the active tab's fill.
     pub bg: Color32,
-    /// The menu bar, toolbar, title bar, and status bar background.
+    /// The title bar (tabs and caption buttons): a step off the menu bar below it, so
+    /// the two rows read as separate layers.
+    pub title: Color32,
+    /// The menu bar, toolbar, and status bar background.
     pub chrome: Color32,
+    /// The hairline between the menu bar and the page, and above the status bar.
+    pub line: Color32,
     /// The background of a settings card.
     pub card: Color32,
     /// A card / row hover fill, and the inactive tab's hover.
@@ -58,6 +65,8 @@ pub struct Palette {
     pub accent_soft: Color32,
     /// Warning text: a dialog's error line.
     pub danger: Color32,
+    /// A solid surface for menus, dialogs and anything else drawn over the page.
+    pub popup: Color32,
     /// Whether this is a dark palette, which `egui` needs for the parts it draws
     /// itself (shadows, scroll bars, the text cursor).
     pub dark: bool,
@@ -66,39 +75,61 @@ pub struct Palette {
 impl Palette {
     /// The dark palette, matched to the reference screenshots.
     pub const DARK: Palette = Palette {
-        bg: Color32::from_rgb(0x20, 0x20, 0x20),
-        chrome: Color32::from_rgb(0x2b, 0x2b, 0x2b),
-        card: Color32::from_rgb(0x2b, 0x2b, 0x2b),
-        row_hover: Color32::from_rgb(0x3a, 0x3a, 0x3a),
-        hover: Color32::from_rgba_premultiplied(45, 45, 45, 255),
-        active: Color32::from_rgba_premultiplied(60, 60, 60, 255),
+        bg: Color32::from_rgb(0x25, 0x25, 0x25),
+        title: Color32::from_rgb(0x1c, 0x1c, 0x1c),
+        chrome: Color32::from_rgb(0x2e, 0x2e, 0x2e),
+        line: Color32::from_rgb(0x26, 0x26, 0x26),
+        card: Color32::from_rgb(0x2e, 0x2e, 0x2e),
+        row_hover: Color32::from_rgb(0x3c, 0x3c, 0x3c),
+        hover: Color32::from_rgba_premultiplied(0x44, 0x44, 0x44, 255),
+        active: Color32::from_rgba_premultiplied(0x55, 0x55, 0x55, 255),
         text: Color32::from_rgb(0xf0, 0xf0, 0xf0),
-        text_dim: Color32::from_rgb(0x9a, 0x9a, 0x9a),
-        border: Color32::from_rgb(0x3a, 0x3a, 0x3a),
-        switch_off: Color32::from_rgb(0x3a, 0x3a, 0x3a),
+        text_dim: Color32::from_rgb(0xae, 0xae, 0xae),
+        border: Color32::from_rgb(0x4a, 0x4a, 0x4a),
+        switch_off: Color32::from_rgb(0x5c, 0x5c, 0x5c),
         accent: Color32::from_rgb(0x4c, 0xc2, 0xff),
         accent_soft: Color32::from_rgba_premultiplied(0x2a, 0x6a, 0x8c, 255),
         danger: Color32::from_rgb(0xff, 0x8a, 0x80),
+        popup: Color32::from_rgb(0x2c, 0x2c, 0x2c),
         dark: true,
     };
 
     /// The light palette: the same relationships, read off a white page.
     pub const LIGHT: Palette = Palette {
         bg: Color32::from_rgb(0xff, 0xff, 0xff),
+        title: Color32::from_rgb(0xe3, 0xe3, 0xe3),
         chrome: Color32::from_rgb(0xf3, 0xf3, 0xf3),
+        line: Color32::from_rgb(0xdc, 0xdc, 0xdc),
         card: Color32::from_rgb(0xf3, 0xf3, 0xf3),
-        row_hover: Color32::from_rgb(0xea, 0xea, 0xea),
-        hover: Color32::from_rgba_premultiplied(0, 0, 0, 16),
-        active: Color32::from_rgba_premultiplied(0, 0, 0, 30),
+        row_hover: Color32::from_rgb(0xe2, 0xe2, 0xe2),
+        hover: Color32::from_rgba_premultiplied(0, 0, 0, 30),
+        active: Color32::from_rgba_premultiplied(0, 0, 0, 52),
         text: Color32::from_rgb(0x1a, 0x1a, 0x1a),
-        text_dim: Color32::from_rgb(0x6a, 0x6a, 0x6a),
-        border: Color32::from_rgb(0xd9, 0xd9, 0xd9),
+        text_dim: Color32::from_rgb(0x5a, 0x5a, 0x5a),
+        border: Color32::from_rgb(0xc6, 0xc6, 0xc6),
         switch_off: Color32::from_rgb(0x8a, 0x8a, 0x8a),
         accent: Color32::from_rgb(0x00, 0x5f, 0xb8),
         accent_soft: Color32::from_rgb(0xcc, 0xe4, 0xf7),
         danger: Color32::from_rgb(0xc5, 0x0f, 0x1f),
+        popup: Color32::from_rgb(0xf3, 0xf3, 0xf3),
         dark: false,
     };
+
+    /// This palette with its title bar and chrome tinted by the desktop, the way a
+    /// focused Windows 11 app's bars take their colour from the wallpaper.
+    ///
+    /// The title bar is the tint; the chrome is the tint half-mixed with neutral grey,
+    /// which is how the two layers relate in the reference screenshot, and the hairline
+    /// is the chrome a step darker.
+    pub fn tinted(mut self, tint: Color32) -> Palette {
+        let mix = |channel: u8| ((channel as u16 + 0x34) / 2) as u8;
+        let [r, g, b, _] = tint.to_array();
+        self.title = tint;
+        self.chrome = Color32::from_rgb(mix(r), mix(g), mix(b));
+        self.card = self.chrome;
+        self.line = self.chrome.gamma_multiply(0.9);
+        self
+    }
 
     /// The palette for a chosen theme, given the one the system reports.
     ///
@@ -143,7 +174,7 @@ pub fn install(ctx: &Context, palette: Palette) {
 
 /// The key the installed palette is remembered under, per `egui` context.
 fn installed_key() -> egui::Id {
-    egui::Id::new("notecraft-installed-palette")
+    egui::Id::new("textcraft-installed-palette")
 }
 
 /// Brings the context's style in line with what `choice` asks for and returns the
@@ -163,7 +194,14 @@ fn installed_key() -> egui::Id {
 /// that made it, and asking on every frame in which two windows disagree would ask
 /// forever.
 pub fn apply(ctx: &Context, choice: AppTheme) -> Palette {
-    let wanted = Palette::for_choice(choice, ctx.system_theme());
+    let mut wanted = Palette::for_choice(choice, ctx.system_theme());
+    // A focused window wears the desktop's colour on its bars, as Windows' own apps do;
+    // one that is not focused goes back to neutral.
+    if wanted.dark && ctx.input(|input| input.viewport().focused.unwrap_or(false)) {
+        if let Some(tint) = crate::ui::desktop_tint::get() {
+            wanted = wanted.tinted(tint);
+        }
+    }
     let key = installed_key();
     let installed = ctx.data(|data| data.get_temp::<Palette>(key));
     if installed != Some(wanted) {
@@ -173,12 +211,12 @@ pub fn apply(ctx: &Context, choice: AppTheme) -> Palette {
     wanted
 }
 
-/// Applies the NoteCraft look to a style.
+/// Applies the TextCraft look to a style.
 fn style_mut(style: &mut egui::Style, palette: Palette) {
     let visuals = &mut style.visuals;
     visuals.dark_mode = palette.dark;
     visuals.panel_fill = palette.bg;
-    visuals.window_fill = palette.chrome;
+    visuals.window_fill = palette.popup;
     visuals.extreme_bg_color = palette.bg;
     visuals.text_edit_bg_color = Some(palette.bg);
     visuals.faint_bg_color = palette.row_hover;
@@ -200,12 +238,17 @@ fn style_mut(style: &mut egui::Style, palette: Palette) {
         &mut widgets.open,
     ] {
         widget.bg_stroke = Stroke::NONE;
-        widget.corner_radius = CornerRadius::same(4);
+        widget.corner_radius = CornerRadius::same(6);
+        widget.expansion = 0.0;
     }
-    widgets.noninteractive.bg_fill = palette.chrome;
+    // A hovered control gets an outline as well as a fill, so the change reads even
+    // where the fill is only a few shades off the bar behind it.
+    widgets.hovered.bg_stroke = Stroke::new(1.0, palette.border);
+    widgets.active.bg_stroke = Stroke::new(1.0, palette.accent);
+    widgets.noninteractive.bg_fill = palette.popup;
     widgets.noninteractive.weak_bg_fill = Color32::TRANSPARENT;
     widgets.noninteractive.fg_stroke = Stroke::new(1.0, palette.text_dim);
-    widgets.inactive.bg_fill = palette.chrome;
+    widgets.inactive.bg_fill = palette.popup;
     widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
     widgets.inactive.fg_stroke = Stroke::new(1.0, palette.text);
     widgets.hovered.bg_fill = palette.hover;
@@ -218,10 +261,11 @@ fn style_mut(style: &mut egui::Style, palette: Palette) {
     widgets.open.weak_bg_fill = palette.hover;
     widgets.open.fg_stroke = Stroke::new(1.0, palette.text);
 
-    style.spacing.item_spacing = Vec2::new(6.0, 6.0);
-    style.spacing.button_padding = Vec2::new(8.0, 4.0);
-    style.spacing.menu_margin = Margin::symmetric(4, 6);
-    style.spacing.interact_size.y = 24.0;
+    style.spacing.item_spacing = Vec2::new(spacing::SM, spacing::SM);
+    style.spacing.button_padding = Vec2::new(11.0, spacing::XS);
+    style.spacing.menu_margin = spacing::margin(spacing::XS, spacing::XS);
+    style.spacing.window_margin = spacing::margin_all(spacing::MD);
+    style.spacing.interact_size.y = 28.0;
 
     // A caret the shell moves — Find, Go to line, Select all — is *asked* to be brought
     // on screen, and `egui` glides that request over a tenth of a second by default. In

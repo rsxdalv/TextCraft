@@ -1,4 +1,4 @@
-# NoteCraft — Roadmap
+# TextCraft — Roadmap
 
 ## 1. Project goal
 
@@ -85,7 +85,7 @@ criteria.
 Exit criteria: The application launches, opens a window, and passes the
 workspace checks.
 
-Status: IN_PROGRESS — the workspace (`nc-app` with the `notepad` binary,
+Status: IN_PROGRESS — the workspace (`nc-app` with the `textcraft` binary,
 `nc-platform`, `nc-core`, `nc-textproc`, `nc-commands`, `xtask`), command-line
 handling, logging, startup/shutdown lifecycle, unit + integration tests, and CI
 (fmt, clippy, host tests, crate boundary check) are in place and green.
@@ -525,14 +525,14 @@ application reliably.
 ## 5. Repository layout
 
 ```
-NoteCraft/
+TextCraft/
 ├── AGENT.md
 ├── ROADMAP.md
 ├── Cargo.toml
 ├── Cargo.lock
 ├── rust-toolchain.toml
 ├── crates/
-│   ├── app/          # nc-app — startup, logging, lifecycle (binary `notepad`)
+│   ├── app/          # nc-app — startup, logging, lifecycle (binary `textcraft`)
 │   ├── platform/     # nc-platform — the egui/eframe shell
 │   ├── commands/     # nc-commands — command registry, menus, shortcuts
 │   ├── core/         # nc-core — document model and editing

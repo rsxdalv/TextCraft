@@ -64,6 +64,13 @@
   .card p { margin: 0; color: var(--dim); }
   .get { padding: 8px 0 56px; }
   .get h2 { font-size: 24px; margin: 0 0 12px; }
+  .get h3 { font-size: 18px; margin: 28px 0 0; }
+  .downloads { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 12px; }
+  .downloads li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+  .downloads .os { font-weight: 600; min-width: 7em; }
+  .downloads .alt { color: var(--dim); }
+  .release-line { color: var(--dim); margin: 0; }
+  .note { color: var(--dim); font-size: 14px; margin: 16px 0 0; }
   pre { margin: 12px 0 0; padding: 14px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); overflow-x: auto; font: 14px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace; }
   footer { border-top: 1px solid var(--line); padding: 24px 0 40px; color: var(--dim); font-size: 14px; }
   footer a { color: inherit; }
@@ -89,7 +96,7 @@
     <h1>A fast, modern text editor.</h1>
     <p>Plain text and Markdown in one small native app, written in Rust.</p>
     <div class="actions">
-      <a class="button primary" href="#get">Build it</a>
+      <a class="button primary" href="#get">Download</a>
       <a class="button" href="https://github.com/rsxdalv/TextCraft">View on GitHub</a>
     </div>
 
@@ -104,8 +111,29 @@
   </section>
 
   <section class="wrap get" id="get">
-    <h2>Get it</h2>
-    <p>There are no packaged downloads yet. To build it you need <a href="https://rustup.rs">Rust</a> and Git.</p>
+    <h2>Download</h2>
+    <p class="release-line" id="release-line">Packages for Windows, macOS and Linux are on the <a href="https://github.com/rsxdalv/TextCraft/releases/latest">latest release</a>.</p>
+    <ul class="downloads">
+      <li>
+        <span class="os">Windows</span>
+        <a class="button primary" data-asset="windows-x64.msi" href="https://github.com/rsxdalv/TextCraft/releases/latest">Installer (.msi)</a>
+        <a class="alt" data-asset="windows-x64-portable.zip" href="https://github.com/rsxdalv/TextCraft/releases/latest">or portable .zip</a>
+      </li>
+      <li>
+        <span class="os">macOS</span>
+        <a class="button primary" data-asset="macos-universal.zip" href="https://github.com/rsxdalv/TextCraft/releases/latest">TextCraft.app (.zip)</a>
+        <span class="alt">Apple silicon and Intel</span>
+      </li>
+      <li>
+        <span class="os">Linux</span>
+        <a class="button primary" data-asset="linux-x86_64.tar.gz" href="https://github.com/rsxdalv/TextCraft/releases/latest">x86_64 (.tar.gz)</a>
+        <span class="alt">needs glibc 2.39 or newer</span>
+      </li>
+    </ul>
+    <p class="note">The builds are not code-signed, so the first launch asks you to confirm. On Windows choose <em>More info</em>, then <em>Run anyway</em>. On macOS open System Settings, Privacy &amp; Security, and choose <em>Open Anyway</em>. Checksums are on the release page.</p>
+
+    <h3>Or build it yourself</h3>
+    <p>You need <a href="https://rustup.rs">Rust</a> and Git.</p>
 <pre><code>git clone https://github.com/rsxdalv/TextCraft
 cd TextCraft
 cargo run --release -p nc-app</code></pre>
@@ -118,5 +146,27 @@ cargo run --release -p nc-app</code></pre>
     <a href="https://github.com/rsxdalv/TextCraft">Source on GitHub</a>.
   </div>
 </footer>
+<script>
+  // Point each button at the newest release's file, and show its version. Without
+  // JavaScript, or if GitHub cannot be reached, the links above go to the release page.
+  (function () {
+    fetch("https://api.github.com/repos/rsxdalv/TextCraft/releases/latest", { headers: { Accept: "application/vnd.github+json" } })
+      .then(function (response) { return response.ok ? response.json() : Promise.reject(); })
+      .then(function (release) {
+        document.querySelectorAll("[data-asset]").forEach(function (link) {
+          var asset = (release.assets || []).find(function (a) { return a.name.endsWith(link.dataset.asset); });
+          if (asset) link.href = asset.browser_download_url;
+        });
+        var line = document.getElementById("release-line");
+        var date = release.published_at ? new Date(release.published_at).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }) : "";
+        line.textContent = "Latest release: " + (release.name || release.tag_name) + (date ? ", " + date : "") + ". ";
+        var all = document.createElement("a");
+        all.href = release.html_url;
+        all.textContent = "Release notes and all files";
+        line.appendChild(all);
+      })
+      .catch(function () {});
+  })();
+</script>
 </body>
 </html>

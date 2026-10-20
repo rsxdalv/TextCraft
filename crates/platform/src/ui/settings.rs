@@ -1,11 +1,11 @@
 //! The settings page, opened from the gear in the toolbar.
 
 use egui::accesskit::Role;
-use egui::{Align, CornerRadius, Frame, Layout, Margin, RichText, WidgetType, vec2};
+use egui::{Align, CornerRadius, Frame, Layout, RichText, WidgetType, vec2};
 
 use crate::ui::fonts::FAMILIES;
 use crate::ui::state::{AppTheme, OpenBehavior, Shell};
-use crate::ui::{a11y, theme::Palette, widgets};
+use crate::ui::{a11y, spacing, theme::Palette, widgets};
 
 /// Draws the settings page.
 pub fn show(shell: &mut Shell, ui: &mut egui::Ui) {
@@ -13,13 +13,13 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui) {
         .frame(
             Frame::NONE
                 .fill(shell.palette.bg)
-                .inner_margin(Margin::symmetric(30, 16)),
+                .inner_margin(spacing::margin(spacing::XL, spacing::LG)),
         )
         .show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 let palette = shell.palette;
                 ui.label(RichText::new("Settings").size(32.0).color(palette.text));
-                ui.add_space(16.0);
+                ui.add_space(spacing::LG);
 
                 ui.horizontal_top(|ui| {
                     let total = ui.available_width();
@@ -55,7 +55,7 @@ fn settings_column(shell: &mut Shell, ui: &mut egui::Ui, palette: Palette) {
         );
     });
 
-    ui.add_space(10.0);
+    ui.add_space(spacing::MD);
     section(ui, "Text Formatting");
     card(ui, palette, |ui| {
         row(ui, palette, "Font", None, |ui| font_dropdown(ui, shell));
@@ -88,8 +88,8 @@ fn settings_column(shell: &mut Shell, ui: &mut egui::Ui, palette: Palette) {
         );
     });
 
-    ui.add_space(10.0);
-    section(ui, "Opening NoteCraft");
+    ui.add_space(spacing::MD);
+    section(ui, "Opening TextCraft");
     card(ui, palette, |ui| {
         row(ui, palette, "Opening files", None, |ui| {
             dropdown(ui, "opening", "Opening files", &mut shell.opening);
@@ -100,29 +100,29 @@ fn settings_column(shell: &mut Shell, ui: &mut egui::Ui, palette: Palette) {
 /// The right column: the "About this app" panel.
 fn about_column(ui: &mut egui::Ui, palette: Palette) {
     ui.label(RichText::new("About this app").size(15.0).strong());
-    ui.add_space(6.0);
-    ui.label(RichText::new(format!("NoteCraft {}", env!("CARGO_PKG_VERSION"))).size(13.0));
-    ui.label(RichText::new("© 2026 NoteCraft contributors. All rights reserved.").size(13.0));
-    ui.add_space(12.0);
+    ui.add_space(spacing::SM);
+    ui.label(RichText::new(format!("TextCraft {}", env!("CARGO_PKG_VERSION"))).size(13.0));
+    ui.label(RichText::new("© 2026 TextCraft contributors. All rights reserved.").size(13.0));
+    ui.add_space(spacing::MD);
     for link in [
         "Software License Terms",
         "Terms of Service",
         "Privacy Statement",
         "Third-Party Software Acknowledgments",
     ] {
-        ui.add_space(4.0);
+        ui.add_space(spacing::XS);
         let _ = ui.link(RichText::new(link).size(13.0).color(palette.accent));
     }
-    ui.add_space(18.0);
+    ui.add_space(spacing::LG);
     let _ = ui.button("Send feedback");
-    ui.add_space(6.0);
+    ui.add_space(spacing::SM);
     let _ = ui.button("Help");
 }
 
 /// A section heading.
 fn section(ui: &mut egui::Ui, title: &str) {
     ui.label(RichText::new(title).size(15.0).strong());
-    ui.add_space(6.0);
+    ui.add_space(spacing::SM);
 }
 
 /// A settings card: a rounded, slightly lighter panel.
@@ -130,12 +130,12 @@ fn card(ui: &mut egui::Ui, palette: Palette, body: impl FnOnce(&mut egui::Ui)) {
     Frame::NONE
         .fill(palette.card)
         .corner_radius(CornerRadius::same(6))
-        .inner_margin(Margin::symmetric(14, 10))
+        .inner_margin(spacing::margin(spacing::MD, spacing::MD))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             body(ui);
         });
-    ui.add_space(6.0);
+    ui.add_space(spacing::SM);
 }
 
 /// A card row: a title, an optional subtitle, and right-aligned control.
@@ -267,7 +267,7 @@ use super::config;
 use super::session::{SessionError, escape, parse_bool, unescape};
 
 /// The settings file's format marker, which also fixes its version.
-const VERSION: &str = "notecraft-settings 1";
+const VERSION: &str = "textcraft-settings 1";
 
 /// The name of the settings file inside the configuration directory.
 const FILE: &str = "settings";
@@ -612,7 +612,7 @@ mod tests {
     impl Scratch {
         fn new(name: &str) -> Self {
             let directory =
-                std::env::temp_dir().join(format!("notecraft-m8-{name}-{}", std::process::id()));
+                std::env::temp_dir().join(format!("textcraft-m8-{name}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&directory);
             std::fs::create_dir_all(&directory).expect("a scratch directory");
             Self(directory)
@@ -672,7 +672,7 @@ mod tests {
         };
         assert_eq!(
             settings.encode(&[]),
-            "notecraft-settings 1\n\
+            "textcraft-settings 1\n\
              theme light\n\
              font Fira Mono\n\
              zoom 130\n\
@@ -913,7 +913,7 @@ mod tests {
         // one, so a header this build does not recognise means "no settings", the way
         // an unreadable session means no session.
         let scratch = Scratch::new("future");
-        write_raw(&scratch, "notecraft-settings 2\ntheme light\nzoom 300\n");
+        write_raw(&scratch, "textcraft-settings 2\ntheme light\nzoom 300\n");
 
         let mut shell = Shell::new();
         scratch.store().apply_to(&mut shell);
@@ -932,7 +932,7 @@ mod tests {
         let scratch = Scratch::new("unknown-value");
         write_raw(
             &scratch,
-            "notecraft-settings 1\ntheme sepia\nfont Comic Sans\nzoom 150\n",
+            "textcraft-settings 1\ntheme sepia\nfont Comic Sans\nzoom 150\n",
         );
 
         let mut shell = Shell::new();
@@ -958,7 +958,7 @@ mod tests {
         let scratch = Scratch::new("foreign-key");
         write_raw(
             &scratch,
-            "notecraft-settings 1\ntheme light\nhyphenation 1\nautocorrect 0\n",
+            "textcraft-settings 1\ntheme light\nhyphenation 1\nautocorrect 0\n",
         );
 
         let mut shell = Shell::new();
@@ -983,7 +983,7 @@ mod tests {
     #[test]
     fn a_repeated_key_takes_the_last_answer() {
         let scratch = Scratch::new("repeated");
-        write_raw(&scratch, "notecraft-settings 1\nzoom 110\nzoom 140\n");
+        write_raw(&scratch, "textcraft-settings 1\nzoom 110\nzoom 140\n");
 
         let mut shell = Shell::new();
         scratch.store().apply_to(&mut shell);

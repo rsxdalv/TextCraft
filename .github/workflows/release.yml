@@ -1,0 +1,200 @@
+name: Release
+
+# Builds the distributable packages and attaches them to a GitHub release.
+#
+#   Windows x64   .msi installer and a portable .zip
+#   Linux x86_64  .tar.gz (binary, launcher, icon)
+#   macOS         universal (Apple silicon + Intel) TextCraft.app in a .zip
+#
+# To release: set `version` in [workspace.package] in Cargo.toml, commit, then push a tag
+# that matches it —
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# The `version` job refuses a tag that disagrees with Cargo.toml, so a mistyped tag fails in
+# seconds instead of shipping binaries that report the wrong version. A tag with a suffix
+# (v0.2.0-rc.1) is published as a pre-release.
+#
+# Run from the Actions tab (workflow_dispatch) it builds and uploads every package as a
+# workflow artifact but publishes nothing, which is the way to try a change to this file.
+#
+# The builds are unsigned: Windows SmartScreen and macOS Gatekeeper will ask the user to
+# confirm the first launch. Signing needs certificates this repository does not have.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+# Only read access by default; the one job that publishes asks for write below.
+permissions:
+  contents: read
+
+# Two pushes of the same tag must not race to create the same release.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  version:
+    name: version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: v
+        name: Read the version and check it against the tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n '/^\[workspace\.package\]/,/^\[/{s/^version *= *"\(.*\)"/\1/p}' Cargo.toml | head -n 1)"
+          if [ -z "$version" ]; then
+            echo "::error::could not read version from [workspace.package] in Cargo.toml"
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match version $version in Cargo.toml; bump the version, commit, and tag again"
+            exit 1
+          fi
+          prerelease=false
+          case "$version" in *-*) prerelease=true ;; esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "Releasing TextCraft $version (prerelease: $prerelease)"
+
+  windows:
+    name: Windows x64
+    needs: version
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      TEXTCRAFT_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - run: rustc -vV
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-windows
+      - name: Install WiX
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - name: Build and package (.msi and portable .zip)
+        shell: pwsh
+        run: ./packaging/windows/package.ps1
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-windows-x64
+          path: dist/release/*
+          if-no-files-found: error
+
+  linux:
+    name: Linux x86_64
+    needs: version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustc -vV
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-linux
+      - name: Build
+        run: cargo build --release --locked -p nc-app
+      - name: Package (.tar.gz)
+        run: ./packaging/linux/package.sh "$VERSION" target/release/textcraft x86_64
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-linux-x86_64
+          path: dist/release/*
+          if-no-files-found: error
+
+  macos:
+    name: macOS universal
+    needs: version
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - run: rustc -vV
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-macos
+      - name: Build both architectures
+        run: |
+          cargo build --release --locked -p nc-app --target aarch64-apple-darwin
+          cargo build --release --locked -p nc-app --target x86_64-apple-darwin
+      - name: Join them into one universal binary
+        run: |
+          mkdir -p target/universal
+          lipo -create -output target/universal/textcraft \
+            target/aarch64-apple-darwin/release/textcraft \
+            target/x86_64-apple-darwin/release/textcraft
+          lipo -info target/universal/textcraft
+      - name: Package (TextCraft.app in a .zip)
+        run: ./packaging/macos/package.sh "$VERSION" target/universal/textcraft universal
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-macos-universal
+          path: dist/release/*
+          if-no-files-found: error
+
+  publish:
+    name: publish release
+    # Only for a pushed tag. A manual run stops after the artifacts above.
+    if: github.ref_type == 'tag'
+    needs: [version, windows, linux, macos]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: artifacts
+          merge-multiple: true
+      - name: Create the release
+        working-directory: artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.version.outputs.version }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          ls -l
+          sha256sum -- * | tee SHA256SUMS.txt
+          cat > notes.md <<'NOTES'
+          Downloads: the Windows installer (`.msi`) or portable `.zip`, the macOS app (`.zip`), and the Linux `.tar.gz`. `SHA256SUMS.txt` lists their checksums.
+
+          These builds are not code-signed. Windows SmartScreen shows "unrecognized app": choose More info, then Run anyway. On macOS, open System Settings > Privacy & Security and choose Open Anyway the first time.
+          NOTES
+          pre=()
+          if [ "$PRERELEASE" = "true" ]; then pre=(--prerelease); fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG exists: replacing its assets"
+            gh release upload "$TAG" --clobber -- *.msi *.zip *.tar.gz SHA256SUMS.txt
+          else
+            gh release create "$TAG" --verify-tag --title "TextCraft $VERSION" --notes-file notes.md --generate-notes "${pre[@]}" -- *.msi *.zip *.tar.gz SHA256SUMS.txt
+          fi

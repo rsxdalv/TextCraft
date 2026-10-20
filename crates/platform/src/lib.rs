@@ -1,4 +1,4 @@
-//! NoteCraft shell.
+//! TextCraft shell.
 //!
 //! This crate owns the window and everything drawn in it: the tab strip, the
 //! menu bar, the formatting toolbar, the editor surface, the status bar, and

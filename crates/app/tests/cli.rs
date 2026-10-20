@@ -8,14 +8,17 @@
 use std::process::Command;
 
 /// Path to the binary under test, provided by Cargo for integration tests.
-const BIN: &str = env!("CARGO_BIN_EXE_notepad");
+const BIN: &str = env!("CARGO_BIN_EXE_textcraft");
 
 #[test]
 fn version_flag_prints_name_and_version() {
     let out = Command::new(BIN).arg("--version").output().unwrap();
     assert!(out.status.success(), "exit: {:?}", out.status);
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("nc-app"), "unexpected stdout: {stdout:?}");
+    assert!(
+        stdout.contains("TextCraft"),
+        "unexpected stdout: {stdout:?}"
+    );
 }
 
 #[test]

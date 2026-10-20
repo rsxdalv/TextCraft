@@ -1,6 +1,6 @@
 //! NC-D004 — what a failed read or write does, and what it does not do.
 //!
-//! A write that cannot happen leaves the file exactly as it was: NoteCraft
+//! A write that cannot happen leaves the file exactly as it was: TextCraft
 //! writes through a neighbouring temporary file and renames it into place, so a
 //! half-written note is never what the user finds. A read that cannot happen
 //! says so, and names the file.
@@ -16,7 +16,7 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn new(name: &str) -> Self {
         let directory =
-            std::env::temp_dir().join(format!("notecraft-{name}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("textcraft-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a scratch directory");
         Self(directory)

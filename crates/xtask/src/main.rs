@@ -50,7 +50,7 @@ fn run_check_boundaries() -> ExitCode {
 
 fn print_help() {
     println!(
-        "xtask — NoteCraft repository tasks\n\
+        "xtask — TextCraft repository tasks\n\
          \n\
          USAGE:\n    cargo xtask <task>\n\
          \n\

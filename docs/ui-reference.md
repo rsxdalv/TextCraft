@@ -1,6 +1,6 @@
-# UI Reference — NoteCraft
+# UI Reference — TextCraft
 
-Source of truth for the UI NoteCraft builds. It is captured from the supplied
+Source of truth for the UI TextCraft builds. It is captured from the supplied
 screens of the modern Notepad app (dark theme): the main window, the File / Edit /
 View menus, the paragraph-style and list dropdowns, and the Settings page.
 
@@ -39,8 +39,18 @@ where the reference capture does not reach.
 | Toolbar (right) | Sparkle (AI) dropdown, feedback icon, account avatar, settings gear. |
 | Status bar | `Ln`/`Col`, character count, an optional notification (the search notices in §5), document kind (`Plain text` / `Markdown`), zoom %, line-ending style, encoding. |
 
-The window is drawn without OS decorations: the app draws its own title bar and
-window controls.
+The window is drawn without OS decorations: the app draws one title row holding
+the icon, the tab strip, the new-tab button and the minimize / maximize / close
+buttons, as Windows Notepad does. Empty space in the row drags the window, a double
+click there maximizes or restores it, and thin zones along the edges and corners
+resize it (`crates/platform/src/ui/window_frame.rs`).
+
+The bars' colour: a focused window tints its title bar and menu bar with the desktop's
+colour, as Windows 11 apps do on Mica; the shell cannot sit on Mica itself (a
+transparent window composed over the DWM backdrop washed the bars out and let the
+system caption buttons show through), so it approximates it from the wallpaper's
+average colour (`crates/platform/src/ui/desktop_tint.rs`). An unfocused window, and
+the light theme, stay neutral.
 
 *Decision — the capture cannot show this.* A screenshot has no scrollbar in it, so
 nothing in §1 asks for the editor to scroll, and no acceptance row covers it. A document
@@ -143,7 +153,7 @@ left, "About this app" on the right.
 - Formatting — switch (On)
 - Spell check — "Underline likely misspelled words" — switch (Off)
 
-**Opening NoteCraft**
+**Opening TextCraft**
 - Opening files — dropdown (Open in a new tab / Open in a new window / Replace the current tab)
 
 ### What the controls do
@@ -306,7 +316,7 @@ the shell's. `Esc` always cancels, and no prompt proceeds on its own.
 | Unsaved changes | A tab or the window is closing with a dirty document (NC-D005), or a file is being opened over a dirty tab (`Settings ▸ Opening files`, `Replace the current tab`) | `Save changes to "<name>"?` — `Save` · `Don't save` · `Cancel` |
 | Overwrite | Save As names a file that already exists (NC-F006) | `"<name>" already exists. Do you want to replace it?` — `Replace` · `Cancel` |
 | Unrepresentable | Saving would lose characters the encoding cannot hold (NC-D003) | `<n> characters cannot be saved in <encoding>. Saving will replace them with "?". Save anyway?` — `Save anyway` · `Choose another encoding` · `Cancel` |
-| Outside change | The file changed on disk since NoteCraft read it (NC-D008) | `"<name>" has changed on disk since it was last read.` — `Reload` · `Keep my version` · `Cancel` |
+| Outside change | The file changed on disk since TextCraft read it (NC-D008) | `"<name>" has changed on disk since it was last read.` — `Reload` · `Keep my version` · `Cancel` |
 
 `Don't save` discards the edits and continues the close; `Reload` reads the file
 again, replacing the editor's text and its history; `Keep my version` leaves the
@@ -411,7 +421,7 @@ the avatar, and every button whose whole visible text is a glyph.
 | A tab | Role *tab*, named after its document, *selected* when it is the one being shown, and carrying the description `Unsaved changes` while its dot is painted. The dot says nothing to a reader otherwise. |
 | A tab's close button | `Close ` and the document's name, so ten tabs do not offer ten identical buttons. |
 | `+` | `New tab` |
-| `✕` / `▢` / `—` | `Close window` / `Maximize window`, or `Restore window` while maximized / `Minimize window` |
+| `—` / `▢` / `✕` | `Minimize window` / `Maximize window`, or `Restore window` while maximized / `Close window` |
 | `H1 ▾` / `≡ ▾` / `✨ ▾` | `Paragraph style` / `Lists` / `AI`, as combo boxes: the visible text is the current value, not the name |
 | `B` / `I` / `S` / `🔗` / `▦` / `Aa` | `Bold` / `Italic` / `Strikethrough` / `Insert a link` / `Insert a table` / `Clear all formatting` |
 | `⚙` / avatar / `💬` | `Settings` / `Account` / `Send feedback` |

@@ -1,6 +1,6 @@
-//! Command-line handling for the `notepad` binary.
+//! Command-line handling for the `textcraft` binary.
 //!
-//! NoteCraft opens any paths given on the command line and otherwise
+//! TextCraft opens any paths given on the command line and otherwise
 //! starts with a single untitled document. We keep the parser dependency-free
 //! and hand-rolled so its behavior is fully unit-testable and does not drift
 //! with a third-party crate.
@@ -66,7 +66,7 @@ mod tests {
     use super::*;
 
     fn args(items: &[&str]) -> Vec<OsString> {
-        std::iter::once("notepad")
+        std::iter::once("textcraft")
             .chain(items.iter().copied())
             .map(OsString::from)
             .collect()

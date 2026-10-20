@@ -561,7 +561,7 @@ pub enum Prompt {
         /// The characters with no representation.
         characters: Vec<char>,
     },
-    /// The file changed on disk since NoteCraft read it (`NC-D008`).
+    /// The file changed on disk since TextCraft read it (`NC-D008`).
     OutsideChange {
         /// The tab whose file changed.
         tab: usize,
@@ -688,7 +688,42 @@ impl Tab {
             .path()
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "Untitled".to_owned())
+            .unwrap_or_else(|| self.untitled_title())
+    }
+
+    /// What an untitled tab is called: the first line of its text that has anything on
+    /// it, shortened, so typing `abcd` renames the tab `abcd` as Windows Notepad does.
+    /// An empty document is still `Untitled`.
+    fn untitled_title(&self) -> String {
+        const LIMIT: usize = 24;
+        let Some(line) = self
+            .text()
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+        else {
+            return "Untitled".to_owned();
+        };
+        // A Markdown document's tab names what the line says, not how it is marked up.
+        let line = if self.kind == DocKind::Markdown {
+            let unmarked = line
+                .trim_start_matches(['#', '>'])
+                .trim_start_matches(['-', '*', '+'])
+                .replace(['*', '`'], "");
+            let unmarked = unmarked.trim().to_owned();
+            if unmarked.is_empty() {
+                return "Untitled".to_owned();
+            }
+            unmarked
+        } else {
+            line.to_owned()
+        };
+        if line.chars().count() <= LIMIT {
+            line
+        } else {
+            let head: String = line.chars().take(LIMIT).collect();
+            format!("{}…", head.trim_end())
+        }
     }
 
     /// The document text.
@@ -876,6 +911,9 @@ pub struct Shell {
     pub page_setup_dialog: PageSetupDialog,
     /// The Open / Save As dialog, when one is on screen.
     pub file_dialog: Option<FileDialog>,
+    /// Whether Open and Save As use the operating system's own dialogs. On for the
+    /// running app; off under test, where there is nobody to answer a native dialog.
+    pub native_dialogs: bool,
     /// The prompt on screen, when one is waiting for an answer.
     pub prompt: Option<Prompt>,
     /// The tab a save is for, and what follows that save once it succeeds
@@ -935,6 +973,7 @@ impl Shell {
             page_setup: nc_textproc::PageSetup::default(),
             page_setup_dialog: PageSetupDialog::new(),
             file_dialog: None,
+            native_dialogs: !cfg!(test),
             prompt: None,
             save_then: None,
             pending_replace: None,
@@ -1008,6 +1047,34 @@ impl Shell {
             .retain(|open| canonical_path(open) != wanted);
         self.recent_files.insert(0, path.to_path_buf());
         self.recent_files.truncate(RECENT_LIMIT);
+    }
+
+    /// Moves the tab at `from` into the gap numbered `gap` (0 is before the first tab,
+    /// `len` after the last), keeping the same document active.
+    pub fn move_tab(&mut self, from: usize, gap: usize) {
+        if from >= self.tabs.len() {
+            return;
+        }
+        let to = if gap > from { gap - 1 } else { gap };
+        let to = to.min(self.tabs.len() - 1);
+        if to == from {
+            return;
+        }
+        let was_active = self.active == from;
+        let tab = self.tabs.remove(from);
+        self.tabs.insert(to, tab);
+        self.active = if was_active {
+            to
+        } else {
+            let mut active = self.active;
+            if from < active {
+                active -= 1;
+            }
+            if to <= active {
+                active += 1;
+            }
+            active
+        };
     }
 
     /// Closes the tab at `index`. The last remaining tab is replaced by a fresh
@@ -1088,7 +1155,7 @@ mod tests {
     #[test]
     fn tabs_recognize_two_spellings_of_one_file() {
         let directory =
-            std::env::temp_dir().join(format!("notecraft-state-{}", std::process::id()));
+            std::env::temp_dir().join(format!("textcraft-state-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a scratch directory");
         let path = directory.join("note.txt");
@@ -1109,7 +1176,7 @@ mod tests {
     /// A scratch directory, removed again by the caller.
     fn scratch(name: &str) -> PathBuf {
         let directory =
-            std::env::temp_dir().join(format!("notecraft-recent-{name}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("textcraft-recent-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a scratch directory");
         directory
@@ -1219,5 +1286,35 @@ mod tests {
         assert_eq!(shell.recent_files.len(), 1);
 
         let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn moving_a_tab_keeps_the_same_document_active() {
+        let mut shell = Shell::new();
+        while shell.tabs.len() < 4 {
+            shell.open_tab(DocKind::Plain);
+        }
+        for (index, tab) in shell.tabs.iter_mut().enumerate() {
+            tab.document_mut().insert_str(&index.to_string());
+        }
+        let text_of = |shell: &Shell, index: usize| shell.tabs[index].text().to_owned();
+
+        // Move tab 0 to the end (gap 4): the active tab (2) is still the same document.
+        shell.active = 2;
+        shell.move_tab(0, 4);
+        assert_eq!(text_of(&shell, 3), "0");
+        assert_eq!(text_of(&shell, shell.active), "2");
+
+        // Move the active one itself.
+        shell.move_tab(shell.active, 0);
+        assert_eq!(shell.active, 0);
+        assert_eq!(text_of(&shell, 0), "2");
+
+        // Dropping a tab where it already is changes nothing.
+        let before: Vec<String> = (0..4).map(|i| text_of(&shell, i)).collect();
+        shell.move_tab(1, 1);
+        shell.move_tab(1, 2);
+        let after: Vec<String> = (0..4).map(|i| text_of(&shell, i)).collect();
+        assert_eq!(before, after);
     }
 }

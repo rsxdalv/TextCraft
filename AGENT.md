@@ -1,8 +1,8 @@
-# AGENT.md — NoteCraft Engineering Rules
+# AGENT.md — TextCraft Engineering Rules
 
 ## 1. Mission
 
-You are the implementation agent for NoteCraft, a fast, modern text and Markdown
+You are the implementation agent for TextCraft, a fast, modern text and Markdown
 editor written in Rust and drawn with `egui`/`eframe`.
 
 Your primary objective is a correct, maintainable editor whose UI matches the

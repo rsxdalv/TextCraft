@@ -17,10 +17,10 @@ use nc_core::Document;
 use crate::encoding::{self, Detection, Encoding, Interpreted};
 use crate::error::{Error, Result};
 
-/// Whether the file on disk still holds what NoteCraft last read or wrote.
+/// Whether the file on disk still holds what TextCraft last read or wrote.
 ///
 /// Whether an outside change is *detected* at all is a design decision
-/// (`docs/ui-reference.md`), so NoteCraft answers the question and
+/// (`docs/ui-reference.md`), so TextCraft answers the question and
 /// leaves the policy — prompt, reload, or ignore — to the caller.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExternalChange {
@@ -201,7 +201,7 @@ impl TextFile {
         self.len() == 0
     }
 
-    /// Whether the file on disk has changed since NoteCraft read or wrote it.
+    /// Whether the file on disk has changed since TextCraft read or wrote it.
     pub fn external_change(&self) -> ExternalChange {
         let missing = |error: &std::io::Error| error.kind() == std::io::ErrorKind::NotFound;
         match fs::read(&self.path) {
@@ -474,7 +474,7 @@ fn temporary_path(path: &Path) -> PathBuf {
     };
     let mut name = OsString::from(".");
     name.push(path.file_name().unwrap_or_else(|| "file".as_ref()));
-    name.push(".notecraft");
+    name.push(".textcraft");
     directory.join(name)
 }
 
@@ -486,11 +486,11 @@ mod tests {
     fn the_temporary_file_is_a_sibling_with_a_hidden_name() {
         assert_eq!(
             temporary_path(Path::new("/notes/todo.txt")),
-            PathBuf::from("/notes/.todo.txt.notecraft")
+            PathBuf::from("/notes/.todo.txt.textcraft")
         );
         assert_eq!(
             temporary_path(Path::new("todo.txt")),
-            PathBuf::from("./.todo.txt.notecraft")
+            PathBuf::from("./.todo.txt.textcraft")
         );
     }
 
@@ -534,7 +534,7 @@ mod tests {
     #[test]
     fn a_restored_file_takes_the_bytes_still_on_disk_as_its_baseline() {
         let directory =
-            std::env::temp_dir().join(format!("notecraft-restore-baseline-{}", std::process::id()));
+            std::env::temp_dir().join(format!("textcraft-restore-baseline-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a scratch directory");
         let path = directory.join("note.txt");
@@ -563,7 +563,7 @@ mod tests {
     #[test]
     fn a_restored_file_writes_its_text_in_its_own_line_ending() {
         let directory =
-            std::env::temp_dir().join(format!("notecraft-restore-{}", std::process::id()));
+            std::env::temp_dir().join(format!("textcraft-restore-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a scratch directory");
         let path = directory.join("note.txt");

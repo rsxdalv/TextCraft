@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=TextCraft
+GenericName=Text Editor
+Comment=A fast, modern text and Markdown editor
+Exec=textcraft %F
+Icon=textcraft
+Terminal=false
+Categories=Utility;TextEditor;
+MimeType=text/plain;text/markdown;
+StartupWMClass=TextCraft
