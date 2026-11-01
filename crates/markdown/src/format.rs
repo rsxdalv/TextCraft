@@ -597,21 +597,21 @@ fn remove_span_style_tags(text: &str, selection: Range) -> Option<Outcome> {
     if !selection.is_within(text) {
         return None;
     }
-    // 1. Remove enclosing <span style="...">...</span> if any
-    let (text_curr, sel_curr) = if let Some((open_range, close_range)) =
-        find_enclosing_tag_prefix_at(
-            text,
-            selection.start,
-            selection.end,
-            "<span style=\"",
-            "</span>",
-        ) {
+    // 1. Remove all enclosing <span style="...">...</span> tags
+    let mut text_curr = text.to_string();
+    let mut sel_curr = selection;
+    while let Some((open_range, close_range)) = find_enclosing_tag_prefix_at(
+        &text_curr,
+        sel_curr.start,
+        sel_curr.end,
+        "<span style=\"",
+        "</span>",
+    ) {
         let patches = [Patch::delete(open_range), Patch::delete(close_range)];
-        let outcome = apply(text, &patches, selection);
-        (outcome.text, outcome.selection)
-    } else {
-        (text.to_string(), selection)
-    };
+        let outcome = apply(&text_curr, &patches, sel_curr);
+        text_curr = outcome.text;
+        sel_curr = outcome.selection;
+    }
 
     // 2. Remove all internal `<span style="...">...</span>` within the selection
     let window = sel_curr.slice(&text_curr);
@@ -851,28 +851,36 @@ pub fn clear_formatting(text: &str, selection: Range) -> Option<Outcome> {
         }
     }
     let mut outcome = strip_block_prefixes(text, expanded)?;
-    outcome = remove_color_spans(&outcome.text, outcome.selection)?;
-    outcome = remove_underline_tags(&outcome.text, outcome.selection)?;
-    for marker in ["**", "~~", "=="] {
-        outcome = remove_pairs(&outcome.text, outcome.selection, marker)?;
+    for _ in 0..8 {
+        let prev_text = outcome.text.clone();
+        outcome = remove_span_style_tags(&outcome.text, outcome.selection)?;
+        outcome = remove_underline_tags(&outcome.text, outcome.selection)?;
+        for marker in ["**", "~~", "==", "`"] {
+            outcome = remove_pairs(&outcome.text, outcome.selection, marker)?;
+        }
+        outcome = remove_star_pairs(&outcome.text, outcome.selection)?;
+        if outcome.text == prev_text {
+            break;
+        }
     }
-    remove_star_pairs(&outcome.text, outcome.selection)
+    Some(outcome)
 }
 
 fn remove_underline_tags(text: &str, selection: Range) -> Option<Outcome> {
     if !selection.is_within(text) {
         return None;
     }
-    // 1. Remove enclosing <u>...</u> tag if any
-    let (text_curr, sel_curr) = if let Some((open_range, close_range)) =
-        find_enclosing_tag_at(text, selection.start, selection.end, "<u>", "</u>")
+    // 1. Remove all enclosing <u>...</u> tags
+    let mut text_curr = text.to_string();
+    let mut sel_curr = selection;
+    while let Some((open_range, close_range)) =
+        find_enclosing_tag_at(&text_curr, sel_curr.start, sel_curr.end, "<u>", "</u>")
     {
         let patches = [Patch::delete(open_range), Patch::delete(close_range)];
-        let outcome = apply(text, &patches, selection);
-        (outcome.text, outcome.selection)
-    } else {
-        (text.to_string(), selection)
-    };
+        let outcome = apply(&text_curr, &patches, sel_curr);
+        text_curr = outcome.text;
+        sel_curr = outcome.selection;
+    }
 
     let window = sel_curr.slice(&text_curr);
     let mut patches = Vec::new();

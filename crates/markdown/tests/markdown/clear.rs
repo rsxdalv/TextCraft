@@ -130,3 +130,15 @@ fn enclosing_color_span_and_underline_are_cleared_when_selecting_inner_text() {
     let cleared_u = clear_formatting(text_u, sel_u).unwrap();
     assert_eq!(cleared_u.text, "before underlined after");
 }
+
+#[test]
+fn complex_nested_multi_layered_formatting_clears_in_one_pass() {
+    let text = "<span style=\"font-family: 'Arial'\"><span style=\"font-size: 18px\"><span style=\"color: #00ff00\">==~~<u>***`all together`***</u>~~==</span></span></span>";
+    let cleared = clear_formatting(text, all(text)).unwrap();
+    assert_eq!(cleared.text, "all together");
+
+    let wrapped = format!("start {text} finish");
+    let inner_sel = selection_of(&wrapped, "all together");
+    let cleared_inner = clear_formatting(&wrapped, inner_sel).unwrap();
+    assert_eq!(cleared_inner.text, "start all together finish");
+}
