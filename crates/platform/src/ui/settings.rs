@@ -52,7 +52,7 @@ fn settings_column(shell: &mut Shell, ui: &mut egui::Ui, palette: Palette) {
             i18n::tr(lang, "App theme"),
             Some(i18n::tr(lang, "Select which app theme to display")),
             |ui| {
-                dropdown(ui, "theme", "App theme", &mut shell.theme);
+                dropdown(ui, lang, "theme", "App theme", &mut shell.theme);
             },
         );
     });
@@ -66,7 +66,7 @@ fn settings_column(shell: &mut Shell, ui: &mut egui::Ui, palette: Palette) {
             i18n::tr(lang, "App language"),
             Some(i18n::tr(lang, "Choose the display language for TextCraft")),
             |ui| {
-                dropdown(ui, "language", "App language", &mut shell.language);
+                dropdown(ui, lang, "language", "App language", &mut shell.language);
             },
         );
     });
@@ -85,13 +85,13 @@ fn settings_column(shell: &mut Shell, ui: &mut egui::Ui, palette: Palette) {
             i18n::tr(lang, "Word wrap"),
             Some(i18n::tr(lang, "Fit text within window by default")),
             |ui| {
-                switch_with_label(ui, palette, "Word wrap", &mut shell.word_wrap);
+                switch_with_label(ui, palette, lang, "Word wrap", &mut shell.word_wrap);
             },
         );
     });
     card(ui, palette, |ui| {
         row(ui, palette, i18n::tr(lang, "Formatting"), None, |ui| {
-            switch_with_label(ui, palette, "Formatting", &mut shell.formatting);
+            switch_with_label(ui, palette, lang, "Formatting", &mut shell.formatting);
         });
     });
     card(ui, palette, |ui| {
@@ -101,7 +101,7 @@ fn settings_column(shell: &mut Shell, ui: &mut egui::Ui, palette: Palette) {
             i18n::tr(lang, "Spell check"),
             Some(i18n::tr(lang, "Underline likely misspelled words")),
             |ui| {
-                switch_with_label(ui, palette, "Spell check", &mut shell.spell_check);
+                switch_with_label(ui, palette, lang, "Spell check", &mut shell.spell_check);
             },
         );
     });
@@ -110,7 +110,7 @@ fn settings_column(shell: &mut Shell, ui: &mut egui::Ui, palette: Palette) {
     section(ui, i18n::tr(lang, "Opening TextCraft"));
     card(ui, palette, |ui| {
         row(ui, palette, i18n::tr(lang, "Opening files"), None, |ui| {
-            dropdown(ui, "opening", "Opening files", &mut shell.opening);
+            dropdown(ui, lang, "opening", "Opening files", &mut shell.opening);
         });
     });
 }
@@ -237,14 +237,20 @@ impl MenuOption for AppLanguage {
 
 /// A dropdown bound to a [`MenuOption`] type, named for the setting it sets: a
 /// combo box shows only its value, and "Dark" does not say what it is dark of.
-fn dropdown<T: MenuOption>(ui: &mut egui::Ui, id: &str, name: &str, selected: &mut T) {
+fn dropdown<T: MenuOption>(
+    ui: &mut egui::Ui,
+    lang: AppLanguage,
+    id: &str,
+    name: &'static str,
+    selected: &mut T,
+) {
     let combo = egui::ComboBox::from_id_salt(id)
-        .selected_text(selected.title())
+        .selected_text(i18n::tr(lang, selected.title()))
         .width(180.0)
         .show_ui(ui, |ui| {
             for option in T::options() {
                 if ui
-                    .selectable_label(*selected == *option, option.title())
+                    .selectable_label(*selected == *option, i18n::tr(lang, option.title()))
                     .clicked()
                 {
                     *selected = *option;
@@ -252,18 +258,19 @@ fn dropdown<T: MenuOption>(ui: &mut egui::Ui, id: &str, name: &str, selected: &m
                 }
             }
         });
-    a11y::label(&combo.response, WidgetType::ComboBox, name);
+    a11y::label(&combo.response, WidgetType::ComboBox, i18n::tr(lang, name));
 }
 
 /// The font-family dropdown.
 fn font_dropdown(ui: &mut egui::Ui, shell: &mut Shell) {
+    let lang = shell.language;
     let combo = egui::ComboBox::from_id_salt("font")
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .selected_text(shell.font_family)
         .width(200.0)
         .show_ui(ui, |ui| {
             ui.label(
-                egui::RichText::new(i18n::tr(shell.language, "Bundled Fonts"))
+                egui::RichText::new(i18n::tr(lang, "Bundled Fonts"))
                     .small()
                     .color(egui::Color32::GRAY),
             );
@@ -280,7 +287,7 @@ fn font_dropdown(ui: &mut egui::Ui, shell: &mut Shell) {
             if !sys.is_empty() {
                 ui.separator();
                 ui.label(
-                    egui::RichText::new(i18n::tr(shell.language, "System Fonts"))
+                    egui::RichText::new(i18n::tr(lang, "System Fonts"))
                         .small()
                         .color(egui::Color32::GRAY),
                 );
@@ -295,16 +302,30 @@ fn font_dropdown(ui: &mut egui::Ui, shell: &mut Shell) {
                 }
             }
         });
-    a11y::label(&combo.response, WidgetType::ComboBox, "Font");
+    a11y::label(
+        &combo.response,
+        WidgetType::ComboBox,
+        i18n::tr(lang, "Font"),
+    );
 }
 
 /// A switch followed by its on/off label, named for the setting it sets: the
 /// label beside it reads "On", which is the state and not the setting.
-fn switch_with_label(ui: &mut egui::Ui, palette: Palette, name: &str, on: &mut bool) {
-    let label = if *on { "On" } else { "Off" };
+fn switch_with_label(
+    ui: &mut egui::Ui,
+    palette: Palette,
+    lang: AppLanguage,
+    name: &'static str,
+    on: &mut bool,
+) {
+    let label = if *on {
+        i18n::tr(lang, "On")
+    } else {
+        i18n::tr(lang, "Off")
+    };
     ui.label(RichText::new(label).size(13.0).color(palette.text_dim));
     let switch = widgets::switch(ui, on, palette);
-    a11y::state(&switch, WidgetType::Checkbox, name, *on);
+    a11y::state(&switch, WidgetType::Checkbox, i18n::tr(lang, name), *on);
     a11y::role(ui.ctx(), switch.id, Role::Switch);
 }
 

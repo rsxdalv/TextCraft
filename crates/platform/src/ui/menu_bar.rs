@@ -7,7 +7,7 @@ use egui::{
 
 use crate::ui::fonts::FAMILIES;
 use crate::ui::state::{
-    AppTheme, DocKind, EditorMode, MarkdownViewMode, ParagraphStyle, Shell, TextColor,
+    AppLanguage, AppTheme, DocKind, EditorMode, MarkdownViewMode, ParagraphStyle, Shell, TextColor,
 };
 use crate::ui::theme::Palette;
 use crate::ui::{a11y, actions, i18n, icons, spacing, widgets};
@@ -541,7 +541,8 @@ fn recent_submenu(
             }
         }
         ui.add(egui::Separator::default().spacing(0.0));
-        let clear_button = egui::Button::new("Clear recent files").min_size(egui::vec2(210.0, 0.0));
+        let clear_text = i18n::tr(shell.language, "Clear recent files");
+        let clear_button = egui::Button::new(clear_text).min_size(egui::vec2(210.0, 0.0));
         if ui.add(clear_button).clicked() {
             actions::run(shell, ctx, CommandId("cmd.file.clear_recent"));
             ui.close();
@@ -665,10 +666,18 @@ fn draw_toolbar_group(
 
 /// Code Editor Group 0: Search & Line Navigation (`Find`, `Replace`, `Go to Ln`).
 fn group_code_navigation(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palette) {
+    let lang = shell.language;
+    let find_tip = format!("{} (Ctrl+F)", i18n::tr(lang, "Find"));
+    let rep_tip = format!("{} (Ctrl+H)", i18n::tr(lang, "Replace"));
+    let goto_tip = format!("{} (Ctrl+G)", i18n::tr(lang, "Go to line"));
     for (label, hover, cmd_id) in [
-        ("Find", "Find (Ctrl+F)", "cmd.edit.find"),
-        ("Replace", "Replace (Ctrl+H)", "cmd.edit.replace"),
-        ("Ln :", "Go to line (Ctrl+G)", "cmd.edit.go_to"),
+        (i18n::tr(lang, "Find"), find_tip.as_str(), "cmd.edit.find"),
+        (
+            i18n::tr(lang, "Replace"),
+            rep_tip.as_str(),
+            "cmd.edit.replace",
+        ),
+        ("Ln :", goto_tip.as_str(), "cmd.edit.go_to"),
     ] {
         let resp = ui
             .add(
@@ -690,32 +699,37 @@ fn group_code_navigation(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, pa
 
 /// Code Editor Group 1: Indentation & Code Blocks (`<<`, `>>`, `</>`, `---`).
 fn group_code_structure(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palette) {
+    let lang = shell.language;
+    let dec_tip = i18n::tr(lang, "Decrease indent");
     let outdent = ui
         .add(
             egui::Button::new(RichText::new("⇤").size(12.0).color(palette.text))
                 .min_size(egui::vec2(24.0, 22.0)),
         )
-        .on_hover_text("Decrease indent");
-    a11y::label(&outdent, WidgetType::Button, "Decrease indent");
+        .on_hover_text(dec_tip);
+    a11y::label(&outdent, WidgetType::Button, dec_tip);
     if outdent.clicked() {
         promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.indent_decrease"));
     }
 
+    let inc_tip = i18n::tr(lang, "Increase indent");
     let indent = ui
         .add(
             egui::Button::new(RichText::new("⇥").size(12.0).color(palette.text))
                 .min_size(egui::vec2(24.0, 22.0)),
         )
-        .on_hover_text("Increase indent");
-    a11y::label(&indent, WidgetType::Button, "Increase indent");
+        .on_hover_text(inc_tip);
+    a11y::label(&indent, WidgetType::Button, inc_tip);
     if indent.clicked() {
         promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.indent_increase"));
     }
 
-    let code = icons::button(ui, "Code", "code", palette).on_hover_text("Wrap in code block");
-    a11y::label(&code, WidgetType::Button, "Code");
+    let code_label = i18n::tr(lang, "Code");
+    let code_tip = i18n::tr(lang, "Wrap in code block");
+    let code = icons::button(ui, code_label, "code", palette).on_hover_text(code_tip);
+    a11y::label(&code, WidgetType::Button, code_label);
     if code.clicked() {
         promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.code"));
@@ -724,8 +738,12 @@ fn group_code_structure(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, pal
 
 /// Code Editor Group 2: Word Wrap & Workspace Sidebar toggles.
 fn group_code_options(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palette) {
+    let lang = shell.language;
     let wrap_active = shell.word_wrap;
-    let mut wrap_btn = egui::Button::new(RichText::new("Wrap").monospace().size(11.0).color(
+    let wrap_text = i18n::tr(lang, "Wrap");
+    let wrap_tip = i18n::tr(lang, "Toggle word wrap");
+    let wrap_a11y = i18n::tr(lang, "Word wrap");
+    let mut wrap_btn = egui::Button::new(RichText::new(wrap_text).monospace().size(11.0).color(
         if wrap_active {
             Color32::WHITE
         } else {
@@ -736,8 +754,8 @@ fn group_code_options(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palet
     if wrap_active {
         wrap_btn = wrap_btn.fill(palette.accent);
     }
-    let wrap_resp = ui.add(wrap_btn).on_hover_text("Toggle word wrap");
-    a11y::label(&wrap_resp, WidgetType::Button, "Word wrap");
+    let wrap_resp = ui.add(wrap_btn).on_hover_text(wrap_tip);
+    a11y::label(&wrap_resp, WidgetType::Button, wrap_a11y);
     if wrap_resp.clicked() {
         actions::run(shell, ctx, CommandId("cmd.view.word_wrap"));
     }
@@ -762,7 +780,12 @@ fn format_toggle_button(
     ui.add(btn).on_hover_text(tooltip)
 }
 
-fn highlight_toggle_button(ui: &mut egui::Ui, active: bool, palette: Palette) -> egui::Response {
+fn highlight_toggle_button(
+    ui: &mut egui::Ui,
+    active: bool,
+    palette: Palette,
+    tooltip: &str,
+) -> egui::Response {
     let glyph = icons::glyph(
         "highlight",
         if active { Color32::WHITE } else { palette.text },
@@ -771,7 +794,7 @@ fn highlight_toggle_button(ui: &mut egui::Ui, active: bool, palette: Palette) ->
     if active {
         btn = btn.fill(palette.accent);
     }
-    ui.add(btn).on_hover_text("Highlight")
+    ui.add(btn).on_hover_text(tooltip)
 }
 
 /// Group 0: Paragraph style + inline formatting (`H1▾`, `B`, `I`, `U`, `S`, `Highlight`, `Text color`).
@@ -798,50 +821,55 @@ fn group_inline(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Pa
     let is_strike = nc_markdown::is_inline_active(text, range, nc_markdown::Inline::Strike);
     let is_highlight = nc_markdown::is_inline_active(text, range, nc_markdown::Inline::Highlight);
 
-    let bold = format_toggle_button(ui, RichText::new("B").strong(), is_bold, palette, "Bold");
-    a11y::label(&bold, WidgetType::Button, "Bold");
+    let bold_tip = i18n::tr(shell.language, "Bold");
+    let bold = format_toggle_button(ui, RichText::new("B").strong(), is_bold, palette, bold_tip);
+    a11y::label(&bold, WidgetType::Button, bold_tip);
     if bold.clicked() {
         promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.bold"));
     }
+    let italic_tip = i18n::tr(shell.language, "Italic");
     let italic = format_toggle_button(
         ui,
         RichText::new("I").italics(),
         is_italic,
         palette,
-        "Italic",
+        italic_tip,
     );
-    a11y::label(&italic, WidgetType::Button, "Italic");
+    a11y::label(&italic, WidgetType::Button, italic_tip);
     if italic.clicked() {
         promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.italic"));
     }
+    let underline_tip = i18n::tr(shell.language, "Underline");
     let underline = format_toggle_button(
         ui,
         RichText::new("U").underline(),
         is_underline,
         palette,
-        "Underline",
+        underline_tip,
     );
-    a11y::label(&underline, WidgetType::Button, "Underline");
+    a11y::label(&underline, WidgetType::Button, underline_tip);
     if underline.clicked() {
         promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.underline"));
     }
+    let strike_tip = i18n::tr(shell.language, "Strikethrough");
     let strike = format_toggle_button(
         ui,
         RichText::new("S").strikethrough(),
         is_strike,
         palette,
-        "Strikethrough",
+        strike_tip,
     );
-    a11y::label(&strike, WidgetType::Button, "Strikethrough");
+    a11y::label(&strike, WidgetType::Button, strike_tip);
     if strike.clicked() {
         promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.strike"));
     }
-    let highlight = highlight_toggle_button(ui, is_highlight, palette);
-    a11y::label(&highlight, WidgetType::Button, "Highlight");
+    let highlight_tip = i18n::tr(shell.language, "Highlight");
+    let highlight = highlight_toggle_button(ui, is_highlight, palette, highlight_tip);
+    a11y::label(&highlight, WidgetType::Button, highlight_tip);
     if highlight.clicked() {
         promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.highlight"));
@@ -852,26 +880,30 @@ fn group_inline(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Pa
 /// Group 1: Lists & block formatting (`Lists▾`, `Task list`, `Blockquote`, `Code`, `Horizontal rule`).
 fn group_blocks(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palette) {
     list_menu(shell, ui, ctx, palette);
-    let checklist = icons::button(ui, "Task list", "checklist", palette).on_hover_text("Task list");
-    a11y::label(&checklist, WidgetType::Button, "Task list");
+    let check_tip = i18n::tr(shell.language, "Task list");
+    let checklist = icons::button(ui, check_tip, "checklist", palette).on_hover_text(check_tip);
+    a11y::label(&checklist, WidgetType::Button, check_tip);
     if checklist.clicked() {
         promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.checklist"));
     }
-    let quote = icons::button(ui, "Blockquote", "quote", palette).on_hover_text("Blockquote");
-    a11y::label(&quote, WidgetType::Button, "Blockquote");
+    let quote_tip = i18n::tr(shell.language, "Blockquote");
+    let quote = icons::button(ui, quote_tip, "quote", palette).on_hover_text(quote_tip);
+    a11y::label(&quote, WidgetType::Button, quote_tip);
     if quote.clicked() {
         promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.quote"));
     }
-    let code = icons::button(ui, "Code", "code", palette).on_hover_text("Code");
-    a11y::label(&code, WidgetType::Button, "Code");
+    let code_tip = i18n::tr(shell.language, "Code");
+    let code = icons::button(ui, code_tip, "code", palette).on_hover_text(code_tip);
+    a11y::label(&code, WidgetType::Button, code_tip);
     if code.clicked() {
         promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.code"));
     }
-    let hr = icons::button(ui, "Horizontal rule", "hr", palette).on_hover_text("Horizontal rule");
-    a11y::label(&hr, WidgetType::Button, "Horizontal rule");
+    let hr_tip = i18n::tr(shell.language, "Horizontal rule");
+    let hr = icons::button(ui, hr_tip, "hr", palette).on_hover_text(hr_tip);
+    a11y::label(&hr, WidgetType::Button, hr_tip);
     if hr.clicked() {
         promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.hr"));
@@ -1091,7 +1123,8 @@ fn group_view_mode(
         ),
     ] {
         let active = current_mode == mode;
-        let label = RichText::new(text).size(11.0).color(if active {
+        let translated = i18n::tr(shell.language, text);
+        let label = RichText::new(translated).size(11.0).color(if active {
             palette.text
         } else {
             palette.text_dim
@@ -1101,8 +1134,9 @@ fn group_view_mode(
         if active {
             button = button.fill(palette.bg);
         }
-        let resp = ui.add(button).on_hover_text(a11y_name);
-        a11y::label(&resp, WidgetType::Button, a11y_name);
+        let a11y_label = i18n::tr(shell.language, a11y_name);
+        let resp = ui.add(button).on_hover_text(a11y_label);
+        a11y::label(&resp, WidgetType::Button, a11y_label);
         if resp.clicked() {
             if mode != MarkdownViewMode::Raw {
                 if let Some(tab) = shell.active_tab_mut() {
@@ -1132,13 +1166,15 @@ fn text_color_menu(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette:
         // 1. Reset / Default (Automatic)
         let default_active = shell.text_color == TextColor::Default;
         let auto_btn = ui.add(
-            egui::Button::new(RichText::new("Automatic (Reset)").size(12.0).color(
-                if default_active {
-                    palette.accent
-                } else {
-                    palette.text
-                },
-            ))
+            egui::Button::new(
+                RichText::new(i18n::tr(shell.language, "Automatic (Reset)"))
+                    .size(12.0)
+                    .color(if default_active {
+                        palette.accent
+                    } else {
+                        palette.text
+                    }),
+            )
             .min_size(egui::vec2(200.0, 24.0))
             .selected(default_active),
         );
@@ -1151,7 +1187,7 @@ fn text_color_menu(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette:
 
         ui.separator();
         ui.label(
-            RichText::new("Standard Colors")
+            RichText::new(i18n::tr(shell.language, "Standard Colors"))
                 .size(10.0)
                 .color(palette.text_dim),
         );
@@ -1212,7 +1248,7 @@ fn text_color_menu(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette:
 
         ui.separator();
         ui.label(
-            RichText::new("Custom Color")
+            RichText::new(i18n::tr(shell.language, "Custom Color"))
                 .size(10.0)
                 .color(palette.text_dim),
         );
@@ -1234,7 +1270,7 @@ fn text_color_menu(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette:
             );
 
             let apply_btn = ui.add(
-                egui::Button::new(RichText::new("Apply").size(11.0))
+                egui::Button::new(RichText::new(i18n::tr(shell.language, "Apply")).size(11.0))
                     .min_size(egui::vec2(50.0, 20.0)),
             );
             if apply_btn.clicked()
@@ -1309,7 +1345,11 @@ fn paragraph_menu(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: 
                 if ui
                     .selectable_label(
                         style == current,
-                        format!("{} ({})", style.label(), style.compact_label()),
+                        format!(
+                            "{} ({})",
+                            i18n::tr(shell.language, style.label()),
+                            style.compact_label()
+                        ),
                     )
                     .clicked()
                 {
@@ -1322,7 +1362,11 @@ fn paragraph_menu(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: 
     );
     // The visible label is the current style; what the button is for is the
     // paragraph style as a whole (`NC-P007`).
-    a11y::label(&menu.response, WidgetType::ComboBox, "Paragraph style");
+    a11y::label(
+        &menu.response,
+        WidgetType::ComboBox,
+        i18n::tr(shell.language, "Paragraph style"),
+    );
 }
 
 /// The bulleted / numbered list dropdown (`docs/ui-reference.md` §3: *Bulleted
@@ -1355,7 +1399,10 @@ fn list_menu(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palet
                 let can_promote = shell.active_tab().is_some_and(|t| !t.file.has_path());
                 let enabled = spec.is_available(context) || can_promote;
                 if ui
-                    .add_enabled(enabled, egui::Button::new(spec.label))
+                    .add_enabled(
+                        enabled,
+                        egui::Button::new(i18n::tr(shell.language, spec.label)),
+                    )
                     .clicked()
                 {
                     promote_untitled_to_markdown(shell);
@@ -1365,7 +1412,11 @@ fn list_menu(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palet
             }
         },
     );
-    a11y::label(&menu.response, WidgetType::ComboBox, "Lists");
+    a11y::label(
+        &menu.response,
+        WidgetType::ComboBox,
+        i18n::tr(shell.language, "Lists"),
+    );
 }
 
 /// The sparkle / feedback / account / settings controls on the right.
@@ -1451,7 +1502,10 @@ fn right_toolbar(
                     if let Some(spec) = by_id(id) {
                         let enabled = spec.is_available(context);
                         if ui
-                            .add_enabled(enabled, egui::Button::new(spec.label))
+                            .add_enabled(
+                                enabled,
+                                egui::Button::new(i18n::tr(shell.language, spec.label)),
+                            )
                             .clicked()
                         {
                             ui.close();
@@ -1481,9 +1535,44 @@ fn editor_mode_button(
     } else {
         palette.text
     };
-    let hover_tip = match mode {
-        EditorMode::Text => "Editor mode: Text Editor (click to switch to Code Editor)",
-        EditorMode::Code => "Editor mode: Code Editor (click to switch to Text Editor)",
+    let lang = shell.language;
+    let hover_tip = match (mode, lang) {
+        (EditorMode::Text, AppLanguage::Portuguese) => {
+            "Modo do editor: Editor de Texto (clique para alternar para Editor de Código)"
+        }
+        (EditorMode::Code, AppLanguage::Portuguese) => {
+            "Modo do editor: Editor de Código (clique para alternar para Editor de Texto)"
+        }
+        (EditorMode::Text, AppLanguage::Spanish) => {
+            "Modo del editor: Editor de Texto (clic para cambiar a Editor de Código)"
+        }
+        (EditorMode::Code, AppLanguage::Spanish) => {
+            "Modo del editor: Editor de Código (clic para cambiar a Editor de Texto)"
+        }
+        (EditorMode::Text, AppLanguage::French) => {
+            "Mode éditeur : Éditeur de Texte (cliquer pour basculer vers Éditeur de Code)"
+        }
+        (EditorMode::Code, AppLanguage::French) => {
+            "Mode éditeur : Éditeur de Code (cliquer pour basculer vers Éditeur de Texte)"
+        }
+        (EditorMode::Text, AppLanguage::German) => {
+            "Editor-Modus: Text-Editor (klicken, um zum Code-Editor zu wechseln)"
+        }
+        (EditorMode::Code, AppLanguage::German) => {
+            "Editor-Modus: Code-Editor (klicken, um zum Text-Editor zu wechseln)"
+        }
+        (EditorMode::Text, AppLanguage::Italian) => {
+            "Modalità editor: Editor di Testo (fai clic per passare all'Editor di Codice)"
+        }
+        (EditorMode::Code, AppLanguage::Italian) => {
+            "Modalità editor: Editor di Codice (fai clic per passare all'Editor di Testo)"
+        }
+        (EditorMode::Text, AppLanguage::English) => {
+            "Editor mode: Text Editor (click to switch to Code Editor)"
+        }
+        (EditorMode::Code, AppLanguage::English) => {
+            "Editor mode: Code Editor (click to switch to Text Editor)"
+        }
     };
 
     let response = if icon_only {
@@ -1498,7 +1587,7 @@ fn editor_mode_button(
     } else {
         let mut btn = egui::Button::new((
             icons::glyph(mode.icon(), fg),
-            RichText::new(mode.short_label())
+            RichText::new(i18n::tr(lang, mode.short_label()))
                 .size(11.5)
                 .strong()
                 .color(fg),
@@ -1513,7 +1602,7 @@ fn editor_mode_button(
         }
         ui.add(btn).on_hover_text(hover_tip)
     };
-    a11y::label(&response, WidgetType::Button, "Editor mode");
+    a11y::label(&response, WidgetType::Button, i18n::tr(lang, "Editor mode"));
     if response.clicked() {
         actions::run(shell, ctx, CommandId("cmd.view.toggle_editor_mode"));
     }

@@ -9,7 +9,7 @@ use egui::{Align2, Color32, Context, CornerRadius, FontId, Rect, Sense, Stroke, 
 use nc_commands::CommandId;
 
 use crate::ui::state::Shell;
-use crate::ui::{a11y, actions, spacing};
+use crate::ui::{a11y, actions, i18n, spacing};
 
 /// Width of the workspace sidebar in points (`w-56` in `gui2`).
 pub const WIDTH: f32 = 220.0;
@@ -48,9 +48,9 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context) {
                 folder
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned().to_uppercase())
-                    .unwrap_or_else(|| "WORKSPACE".to_owned())
+                    .unwrap_or_else(|| i18n::tr(shell.language, "WORKSPACE").to_owned())
             } else {
-                "WORKSPACE".to_owned()
+                i18n::tr(shell.language, "WORKSPACE").to_owned()
             };
             ui.painter().text(
                 egui::pos2(header_rect.left() + spacing::MD, header_rect.center().y),
@@ -61,9 +61,9 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context) {
             );
             let count = shell.tabs.len();
             let count_label = if count == 1 {
-                "1 file".to_owned()
+                i18n::tr(shell.language, "1 file").to_owned()
             } else {
-                format!("{count} files")
+                format!("{count} {}", i18n::tr(shell.language, "files"))
             };
             ui.painter().text(
                 egui::pos2(header_rect.right() - spacing::MD, header_rect.center().y),
@@ -163,7 +163,11 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context) {
                 ),
             );
             let new_resp = ui.interact(btn_rect, ui.id().with("sidebar_new_file"), Sense::click());
-            a11y::label(&new_resp, WidgetType::Button, "New file");
+            a11y::label(
+                &new_resp,
+                WidgetType::Button,
+                i18n::tr(shell.language, "New file"),
+            );
             let fill = if new_resp.hovered() {
                 palette.chrome
             } else {
@@ -180,7 +184,7 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context) {
             ui.painter().text(
                 btn_rect.center(),
                 Align2::CENTER_CENTER,
-                "+ New File",
+                i18n::tr(shell.language, "+ New File"),
                 FontId::proportional(12.0),
                 palette.accent,
             );

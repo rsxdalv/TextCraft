@@ -4,6 +4,7 @@
 use egui::{Align, Layout, RichText, Sense};
 
 use crate::ui::a11y;
+use crate::ui::i18n;
 use crate::ui::spacing;
 use crate::ui::state::Shell;
 use crate::ui::theme::Palette;
@@ -33,13 +34,20 @@ pub fn show(shell: &Shell, ui: &mut egui::Ui) {
                     palette,
                 ));
                 divider(ui);
-                ui.label(item(format!("{} characters", shell.char_count()), palette));
+                ui.label(item(
+                    format!(
+                        "{} {}",
+                        shell.char_count(),
+                        i18n::tr(shell.language, "characters")
+                    ),
+                    palette,
+                ));
                 divider(ui);
                 let words = shell.word_count();
                 let words_label = if words == 1 {
-                    "1 word".to_owned()
+                    i18n::tr(shell.language, "1 word").to_owned()
                 } else {
-                    format!("{words} words")
+                    format!("{words} {}", i18n::tr(shell.language, "words"))
                 };
                 ui.label(item(words_label, palette));
                 if let Some(note) = &shell.notification {
@@ -51,9 +59,9 @@ pub fn show(shell: &Shell, ui: &mut egui::Ui) {
                     ui.add_space(spacing::LG);
                     let dirty = tab.is_some_and(|t| t.is_dirty());
                     let sync_text = if dirty {
-                        "Unsaved changes"
+                        i18n::tr(shell.language, "Unsaved changes")
                     } else {
-                        "Synced locally"
+                        i18n::tr(shell.language, "Synced locally")
                     };
                     ui.label(RichText::new(sync_text).size(12.5).color(palette.text));
                     let (dot_rect, _) =
@@ -77,7 +85,8 @@ pub fn show(shell: &Shell, ui: &mut egui::Ui) {
                     divider(ui);
                     ui.label(item(shell.editor_mode.label(), palette));
                     divider(ui);
-                    let label = tab.map(|t| t.kind_label()).unwrap_or("Plain text");
+                    let raw_label = tab.map(|t| t.kind_label()).unwrap_or("Plain text");
+                    let label = i18n::tr(shell.language, raw_label);
                     let kind_resp = ui.label(item(label, palette));
                     a11y::painted(
                         ui.ctx(),
