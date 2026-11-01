@@ -1,7 +1,9 @@
 //! The top bar: the `File`/`Edit`/`View` menus, the formatting toolbar, and the
 //! account / settings controls.
 
-use egui::{Align, Color32, Context, Event, Key, Layout, Modifiers, RichText, WidgetType};
+use egui::{
+    Align, Color32, Context, Event, Key, Layout, Modifiers, RichText, StrokeKind, WidgetType,
+};
 
 use crate::ui::fonts::FAMILIES;
 use crate::ui::state::{
@@ -734,43 +736,104 @@ fn group_code_options(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palet
     }
 }
 
+fn format_toggle_button(
+    ui: &mut egui::Ui,
+    label: RichText,
+    active: bool,
+    palette: Palette,
+    tooltip: &str,
+) -> egui::Response {
+    let mut btn = egui::Button::new(if active {
+        label.color(Color32::WHITE)
+    } else {
+        label.color(palette.text)
+    })
+    .min_size(egui::vec2(26.0, 26.0));
+    if active {
+        btn = btn.fill(palette.accent);
+    }
+    ui.add(btn).on_hover_text(tooltip)
+}
+
+fn highlight_toggle_button(ui: &mut egui::Ui, active: bool, palette: Palette) -> egui::Response {
+    let glyph = icons::glyph(
+        "highlight",
+        if active { Color32::WHITE } else { palette.text },
+    );
+    let mut btn = egui::Button::new(glyph).min_size(egui::vec2(26.0, 26.0));
+    if active {
+        btn = btn.fill(palette.accent);
+    }
+    ui.add(btn).on_hover_text("Highlight")
+}
+
 /// Group 0: Paragraph style + inline formatting (`H1▾`, `B`, `I`, `U`, `S`, `Highlight`, `Text color`).
 fn group_inline(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palette) {
     paragraph_menu(shell, ui, ctx, palette);
 
-    let bold = ui
-        .add(
-            egui::Button::new(RichText::new("B").strong().color(Color32::WHITE))
-                .fill(palette.accent)
-                .min_size(egui::vec2(26.0, 26.0)),
-        )
-        .on_hover_text("Bold");
+    let (text, range) = shell
+        .active_tab()
+        .map(|tab| {
+            let r = tab.document().selection().range();
+            (
+                tab.text(),
+                nc_markdown::Range {
+                    start: r.start,
+                    end: r.end,
+                },
+            )
+        })
+        .unwrap_or(("", nc_markdown::Range { start: 0, end: 0 }));
+
+    let is_bold = nc_markdown::is_inline_active(text, range, nc_markdown::Inline::Bold);
+    let is_italic = nc_markdown::is_inline_active(text, range, nc_markdown::Inline::Italic);
+    let is_underline = nc_markdown::is_inline_active(text, range, nc_markdown::Inline::Underline);
+    let is_strike = nc_markdown::is_inline_active(text, range, nc_markdown::Inline::Strike);
+    let is_highlight = nc_markdown::is_inline_active(text, range, nc_markdown::Inline::Highlight);
+
+    let bold = format_toggle_button(ui, RichText::new("B").strong(), is_bold, palette, "Bold");
     a11y::label(&bold, WidgetType::Button, "Bold");
     if bold.clicked() {
         promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.bold"));
     }
-    let italic = widgets::rich_button(ui, RichText::new("I").italics()).on_hover_text("Italic");
+    let italic = format_toggle_button(
+        ui,
+        RichText::new("I").italics(),
+        is_italic,
+        palette,
+        "Italic",
+    );
     a11y::label(&italic, WidgetType::Button, "Italic");
     if italic.clicked() {
         promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.italic"));
     }
-    let underline =
-        widgets::rich_button(ui, RichText::new("U").underline()).on_hover_text("Underline");
+    let underline = format_toggle_button(
+        ui,
+        RichText::new("U").underline(),
+        is_underline,
+        palette,
+        "Underline",
+    );
     a11y::label(&underline, WidgetType::Button, "Underline");
     if underline.clicked() {
         promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.underline"));
     }
-    let strike =
-        widgets::rich_button(ui, RichText::new("S").strikethrough()).on_hover_text("Strikethrough");
+    let strike = format_toggle_button(
+        ui,
+        RichText::new("S").strikethrough(),
+        is_strike,
+        palette,
+        "Strikethrough",
+    );
     a11y::label(&strike, WidgetType::Button, "Strikethrough");
     if strike.clicked() {
         promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.strike"));
     }
-    let highlight = icons::button(ui, "Highlight", "highlight", palette).on_hover_text("Highlight");
+    let highlight = highlight_toggle_button(ui, is_highlight, palette);
     a11y::label(&highlight, WidgetType::Button, "Highlight");
     if highlight.clicked() {
         promote_untitled_to_markdown(shell);
@@ -869,15 +932,81 @@ fn group_typography(
                 icons::glyph("chevron-down", palette.text_dim),
             ),
             |ui| {
-                for family in FAMILIES {
-                    if ui
-                        .selectable_label(shell.font_family == family, family)
-                        .clicked()
-                    {
-                        shell.font_family = family;
-                        ui.close();
+                ui.set_min_width(220.0);
+                ui.horizontal(|ui| {
+                    ui.add(icons::glyph("search", palette.text_dim));
+                    let edit = egui::TextEdit::singleline(&mut shell.font_search_filter)
+                        .hint_text("Search fonts...")
+                        .desired_width(150.0);
+                    ui.add(edit);
+                    if !shell.font_search_filter.is_empty() && ui.small_button("✕").clicked() {
+                        shell.font_search_filter.clear();
                     }
-                }
+                });
+                ui.separator();
+
+                let filter = shell.font_search_filter.to_lowercase();
+                egui::ScrollArea::vertical()
+                    .max_height(260.0)
+                    .show(ui, |ui| {
+                        let filtered_bundled: Vec<&str> = FAMILIES
+                            .into_iter()
+                            .filter(|f| filter.is_empty() || f.to_lowercase().contains(&filter))
+                            .collect();
+
+                        if !filtered_bundled.is_empty() {
+                            ui.label(
+                                RichText::new("Bundled Fonts")
+                                    .small()
+                                    .color(palette.text_dim),
+                            );
+                            for &family in &filtered_bundled {
+                                if ui
+                                    .selectable_label(shell.font_family == family, family)
+                                    .clicked()
+                                {
+                                    shell.font_family = family;
+                                    ui.close();
+                                }
+                            }
+                        }
+
+                        let sys_all = crate::ui::fonts::system_fonts();
+                        let filtered_sys: Vec<&crate::ui::fonts::SystemFont> = sys_all
+                            .iter()
+                            .filter(|f| {
+                                filter.is_empty() || f.name.to_lowercase().contains(&filter)
+                            })
+                            .collect();
+
+                        if !filtered_sys.is_empty() {
+                            if !filtered_bundled.is_empty() {
+                                ui.separator();
+                            }
+                            ui.label(
+                                RichText::new(format!("System Fonts ({})", sys_all.len()))
+                                    .small()
+                                    .color(palette.text_dim),
+                            );
+                            for f in &filtered_sys {
+                                if ui
+                                    .selectable_label(shell.font_family == f.name, f.name)
+                                    .clicked()
+                                {
+                                    shell.font_family = f.name;
+                                    ui.close();
+                                }
+                            }
+                        }
+
+                        if filtered_bundled.is_empty() && filtered_sys.is_empty() {
+                            ui.label(
+                                RichText::new("No matching fonts found")
+                                    .italics()
+                                    .color(palette.text_dim),
+                            );
+                        }
+                    });
             },
         )
         .response
@@ -966,42 +1095,137 @@ fn group_view_mode(
 }
 
 /// The `Text color` toolbar dropdown: shows the `A` text-color icon with an active
-/// colour bar indicator underneath, and opens a colour palette menu.
+/// colour bar indicator underneath, and opens a modern market-standard colour palette menu
+/// (Automatic reset, 16-colour grid swatches, and custom RGB/Hex color picker).
 fn text_color_menu(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palette) {
     let swatch_color = match shell.text_color {
-        TextColor::Default | TextColor::Pine => palette.accent,
+        TextColor::Default => palette.text_dim,
         other => other
             .rgb()
             .map(|[r, g, b]| Color32::from_rgb(r, g, b))
             .unwrap_or(palette.accent),
     };
     let menu = ui.menu_button(icons::glyph("text-color", palette.text), |ui| {
-        ui.set_min_width(155.0);
-        for choice in TextColor::ALL {
-            let dot_color = choice
-                .rgb()
-                .map(|[r, g, b]| Color32::from_rgb(r, g, b))
-                .unwrap_or(palette.text);
-            let is_selected = shell.text_color == choice;
-            let row = ui.add(
-                egui::Button::new((
-                    RichText::new("●").size(13.0).color(dot_color),
-                    RichText::new(choice.label()).size(12.0).color(palette.text),
-                ))
-                .selected(is_selected)
-                .min_size(egui::vec2(148.0, 24.0)),
-            );
-            if row.clicked() {
-                shell.text_color = choice;
-                if let Some(tab) = shell.active_tab_mut() {
-                    if !tab.file.has_path() {
-                        tab.kind = DocKind::Markdown;
+        ui.set_min_width(210.0);
+        ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
+
+        // 1. Reset / Default (Automatic)
+        let default_active = shell.text_color == TextColor::Default;
+        let auto_btn = ui.add(
+            egui::Button::new(RichText::new("Automatic (Reset)").size(12.0).color(
+                if default_active {
+                    palette.accent
+                } else {
+                    palette.text
+                },
+            ))
+            .min_size(egui::vec2(200.0, 24.0))
+            .selected(default_active),
+        );
+        if auto_btn.clicked() {
+            shell.text_color = TextColor::Default;
+            promote_untitled_to_markdown(shell);
+            actions::run(shell, ctx, CommandId("cmd.md.text_color"));
+            ui.close();
+        }
+
+        ui.separator();
+        ui.label(
+            RichText::new("Standard Colors")
+                .size(10.0)
+                .color(palette.text_dim),
+        );
+
+        // 2. 2D Swatch Grid (8 columns x 2 rows = 16 colors)
+        egui::Grid::new("color_palette_grid")
+            .spacing(egui::vec2(5.0, 5.0))
+            .show(ui, |ui| {
+                for (col_idx, &(rgb, label)) in TextColor::PALETTE_GRID.iter().enumerate() {
+                    let color = Color32::from_rgb(rgb[0], rgb[1], rgb[2]);
+                    let is_active = shell.text_color.rgb() == Some(rgb);
+
+                    let (rect, resp) =
+                        ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::click());
+                    let painter = ui.painter();
+
+                    let is_hovered = resp.hovered();
+                    // Draw swatch square with rounded corners
+                    painter.rect_filled(rect, egui::CornerRadius::same(3), color);
+                    let border_color = if is_active {
+                        palette.accent
+                    } else if is_hovered {
+                        palette.text
+                    } else {
+                        palette.border
+                    };
+                    let stroke_width = if is_active || is_hovered { 1.5 } else { 0.5 };
+                    painter.rect_stroke(
+                        rect,
+                        egui::CornerRadius::same(3),
+                        egui::Stroke::new(stroke_width, border_color),
+                        StrokeKind::Inside,
+                    );
+
+                    if is_active {
+                        let center = rect.center();
+                        let dot_color = if (rgb[0] as u32 + rgb[1] as u32 + rgb[2] as u32) > 380 {
+                            Color32::BLACK
+                        } else {
+                            Color32::WHITE
+                        };
+                        painter.circle_filled(center, 3.0, dot_color);
+                    }
+
+                    if resp.on_hover_text(label).clicked() {
+                        shell.text_color = TextColor::from_rgb(rgb);
+                        shell.custom_color_rgb = rgb;
+                        promote_untitled_to_markdown(shell);
+                        actions::run(shell, ctx, CommandId("cmd.md.text_color"));
+                        ui.close();
+                    }
+
+                    if (col_idx + 1) % 8 == 0 {
+                        ui.end_row();
                     }
                 }
+            });
+
+        ui.separator();
+        ui.label(
+            RichText::new("Custom Color")
+                .size(10.0)
+                .color(palette.text_dim),
+        );
+
+        // 3. Custom color picker with egui::color_edit_button_srgb
+        ui.horizontal(|ui| {
+            let color_changed = ui
+                .color_edit_button_srgb(&mut shell.custom_color_rgb)
+                .changed();
+            let hex_str = format!(
+                "#{:02X}{:02X}{:02X}",
+                shell.custom_color_rgb[0], shell.custom_color_rgb[1], shell.custom_color_rgb[2]
+            );
+            ui.label(
+                RichText::new(&hex_str)
+                    .monospace()
+                    .size(11.0)
+                    .color(palette.text),
+            );
+
+            let apply_btn = ui.add(
+                egui::Button::new(RichText::new("Apply").size(11.0))
+                    .min_size(egui::vec2(50.0, 20.0)),
+            );
+            if apply_btn.clicked()
+                || (color_changed && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+            {
+                shell.text_color = TextColor::Custom(shell.custom_color_rgb);
+                promote_untitled_to_markdown(shell);
                 actions::run(shell, ctx, CommandId("cmd.md.text_color"));
                 ui.close();
             }
-        }
+        });
     });
     let btn_rect = menu.response.rect;
     let bar_rect = egui::Rect::from_center_size(
@@ -1016,23 +1240,52 @@ fn text_color_menu(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette:
     a11y::label(&response, WidgetType::ComboBox, "Text color");
 }
 
-/// The `H1` paragraph-style dropdown.
-///
-/// The item list is the registry's, in §3's order, and choosing one fires its
-/// command rather than setting the style here: the dropdown, the menu, and the
-/// shortcut have to write the same bytes, and only `nc-markdown` decides what a
-/// style is.
+/// Detects the paragraph style at the caret position in the active document.
+fn detect_current_paragraph(shell: &Shell) -> ParagraphStyle {
+    if let Some(tab) = shell.active_tab() {
+        if tab.kind == DocKind::Markdown {
+            let text = tab.text();
+            let caret = shell.caret.min(text.len());
+            let line_start = text[..caret].rfind('\n').map(|idx| idx + 1).unwrap_or(0);
+            let line_tail = &text[line_start..];
+            if line_tail.starts_with("###### ") {
+                return ParagraphStyle::Subsection;
+            } else if line_tail.starts_with("##### ") {
+                return ParagraphStyle::Section;
+            } else if line_tail.starts_with("#### ") {
+                return ParagraphStyle::Subheading;
+            } else if line_tail.starts_with("### ") {
+                return ParagraphStyle::Heading;
+            } else if line_tail.starts_with("## ") {
+                return ParagraphStyle::Subtitle;
+            } else if line_tail.starts_with("# ") {
+                return ParagraphStyle::Title;
+            } else {
+                return ParagraphStyle::Body;
+            }
+        }
+        return tab.paragraph;
+    }
+    ParagraphStyle::Body
+}
+
+/// The paragraph-style dropdown: shows the active style (e.g. `H1`, `H2`, `Body`) and allows changing it.
 fn paragraph_menu(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palette) {
-    let current = shell
-        .active_tab()
-        .map(|tab| tab.paragraph)
-        .unwrap_or(ParagraphStyle::Body);
+    let current = detect_current_paragraph(shell);
     let menu = ui.menu_button(
-        ("H1", icons::glyph("chevron-down", palette.text_dim)),
+        (
+            RichText::new(current.compact_label())
+                .size(12.0)
+                .color(palette.text),
+            icons::glyph("chevron-down", palette.text_dim),
+        ),
         |ui| {
             for style in ParagraphStyle::ALL {
                 if ui
-                    .selectable_label(style == current, style.label())
+                    .selectable_label(
+                        style == current,
+                        format!("{} ({})", style.label(), style.compact_label()),
+                    )
                     .clicked()
                 {
                     promote_untitled_to_markdown(shell);

@@ -121,7 +121,7 @@ pub fn run(shell: &mut Shell, ctx: &Context, id: CommandId) {
         "cmd.md.text_color" => {
             let hex = shell.text_color.hex();
             apply_format(shell, move |text, selection| {
-                nc_markdown::set_text_color(text, selection, hex)
+                nc_markdown::set_text_color(text, selection, hex.as_deref())
             });
         }
         "cmd.md.checklist" => apply_format(shell, nc_markdown::toggle_checklist),

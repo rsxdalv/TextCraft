@@ -41,8 +41,9 @@ mod patch;
 pub use export::export_html;
 pub use format::{
     Heading, INDENT, Inline, ListKind, clear_formatting, expand_table, indent_lines,
-    insert_horizontal_rule, insert_image, insert_link, insert_table, outdent_lines, set_heading,
-    set_list, set_text_color, toggle_checklist, toggle_code, toggle_inline, toggle_quote,
+    insert_horizontal_rule, insert_image, insert_link, insert_table, is_inline_active,
+    outdent_lines, set_heading, set_list, set_text_color, toggle_checklist, toggle_code,
+    toggle_inline, toggle_quote,
 };
 pub use parse::{Block, BlockKind, ListMarker, Span, SpanKind, blocks, spans};
 pub use patch::{Outcome, Patch, apply};

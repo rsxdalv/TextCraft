@@ -87,10 +87,12 @@ pub enum TextColor {
     Coral,
     /// Muted Slate (`#64748B`).
     Slate,
+    /// Custom RGB color chosen via colour picker or hex input.
+    Custom([u8; 3]),
 }
 
 impl TextColor {
-    /// Every colour option offered in the toolbar palette.
+    /// Every named colour option offered in the toolbar palette.
     pub const ALL: [TextColor; 9] = [
         TextColor::Default,
         TextColor::Pine,
@@ -101,6 +103,26 @@ impl TextColor {
         TextColor::Teal,
         TextColor::Coral,
         TextColor::Slate,
+    ];
+
+    /// Standard 16-colour palette grid (like Word, Docs, Notion).
+    pub const PALETTE_GRID: [([u8; 3], &'static str); 16] = [
+        ([0x00, 0x00, 0x00], "Black"),
+        ([0x43, 0x43, 0x43], "Dark Gray"),
+        ([0x66, 0x66, 0x66], "Gray"),
+        ([0xC9, 0x2A, 0x2A], "Crimson Red"),
+        ([0xD9, 0x77, 0x06], "Amber Gold"),
+        ([0x2D, 0x6A, 0x4F], "Pine Green"),
+        ([0x19, 0x71, 0xC2], "Ocean Blue"),
+        ([0x70, 0x48, 0xE8], "Royal Purple"),
+        ([0x94, 0xA3, 0xB8], "Light Slate"),
+        ([0xB4, 0x53, 0x09], "Warm Ochre"),
+        ([0xE8, 0x59, 0x0C], "Warm Coral"),
+        ([0xE0, 0x31, 0x31], "Bright Red"),
+        ([0x0C, 0x85, 0x99], "Teal Cyan"),
+        ([0x2F, 0x9E, 0x44], "Vibrant Green"),
+        ([0x42, 0x63, 0xEB], "Indigo Blue"),
+        ([0xAE, 0x3E, 0xC9], "Violet"),
     ];
 
     /// The human-readable name shown in the colour picker menu.
@@ -115,21 +137,23 @@ impl TextColor {
             TextColor::Teal => "Teal Cyan",
             TextColor::Coral => "Warm Coral",
             TextColor::Slate => "Muted Slate",
+            TextColor::Custom(_) => "Custom",
         }
     }
 
     /// The `#RRGGBB` hex string written into `<span style="color: #HEX">`, or `None` for `Default`.
-    pub const fn hex(self) -> Option<&'static str> {
+    pub fn hex(self) -> Option<String> {
         match self {
             TextColor::Default => None,
-            TextColor::Pine => Some("#2D6A4F"),
-            TextColor::Crimson => Some("#C92A2A"),
-            TextColor::Ocean => Some("#1971C2"),
-            TextColor::Amber => Some("#D97706"),
-            TextColor::Purple => Some("#7048E8"),
-            TextColor::Teal => Some("#0C8599"),
-            TextColor::Coral => Some("#E8590C"),
-            TextColor::Slate => Some("#64748B"),
+            TextColor::Pine => Some("#2D6A4F".to_owned()),
+            TextColor::Crimson => Some("#C92A2A".to_owned()),
+            TextColor::Ocean => Some("#1971C2".to_owned()),
+            TextColor::Amber => Some("#D97706".to_owned()),
+            TextColor::Purple => Some("#7048E8".to_owned()),
+            TextColor::Teal => Some("#0C8599".to_owned()),
+            TextColor::Coral => Some("#E8590C".to_owned()),
+            TextColor::Slate => Some("#64748B".to_owned()),
+            TextColor::Custom([r, g, b]) => Some(format!("#{r:02X}{g:02X}{b:02X}")),
         }
     }
 
@@ -145,7 +169,18 @@ impl TextColor {
             TextColor::Teal => Some([0x0C, 0x85, 0x99]),
             TextColor::Coral => Some([0xE8, 0x59, 0x0C]),
             TextColor::Slate => Some([0x64, 0x74, 0x8B]),
+            TextColor::Custom(rgb) => Some(rgb),
         }
+    }
+
+    /// Finds a matching named or grid color, or returns `TextColor::Custom(rgb)`.
+    pub fn from_rgb(rgb: [u8; 3]) -> Self {
+        for choice in Self::ALL {
+            if choice.rgb() == Some(rgb) {
+                return choice;
+            }
+        }
+        TextColor::Custom(rgb)
     }
 }
 
@@ -190,6 +225,18 @@ impl ParagraphStyle {
             ParagraphStyle::Section => "Section",
             ParagraphStyle::Subsection => "Subsection",
             ParagraphStyle::Body => "Body",
+        }
+    }
+
+    /// The compact label shown on the toolbar dropdown button (e.g. "H1", "H2").
+    pub const fn compact_label(self) -> &'static str {
+        match self {
+            ParagraphStyle::Title | ParagraphStyle::Body => "H1",
+            ParagraphStyle::Subtitle => "H2",
+            ParagraphStyle::Heading => "H3",
+            ParagraphStyle::Subheading => "H4",
+            ParagraphStyle::Section => "H5",
+            ParagraphStyle::Subsection => "H6",
         }
     }
 
@@ -1101,6 +1148,10 @@ pub struct Shell {
     pub font_family: &'static str,
     /// The active colour selected in the formatting toolbar's text-colour picker.
     pub text_color: TextColor,
+    /// Custom colour RGB components selected in the text colour popover picker.
+    pub custom_color_rgb: [u8; 3],
+    /// Search filter query for the font selector dropdown.
+    pub font_search_filter: String,
     /// Whether the shell is in Rich Text Editor mode or Full Code Editor mode.
     pub editor_mode: EditorMode,
     /// Where opened files go.
@@ -1193,6 +1244,8 @@ impl Shell {
             palette: Palette::LIGHT,
             font_family: crate::ui::fonts::DEFAULT,
             text_color: TextColor::Crimson,
+            custom_color_rgb: [0xE8, 0x59, 0x0C],
+            font_search_filter: String::new(),
             editor_mode: EditorMode::Text,
             opening: OpenBehavior::NewTab,
             spell_check: false,

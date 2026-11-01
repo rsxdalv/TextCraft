@@ -209,8 +209,13 @@ fn dropdown<T: MenuOption>(ui: &mut egui::Ui, id: &str, name: &str, selected: &m
 fn font_dropdown(ui: &mut egui::Ui, shell: &mut Shell) {
     let combo = egui::ComboBox::from_id_salt("font")
         .selected_text(shell.font_family)
-        .width(180.0)
+        .width(200.0)
         .show_ui(ui, |ui| {
+            ui.label(
+                egui::RichText::new("Bundled Fonts")
+                    .small()
+                    .color(egui::Color32::GRAY),
+            );
             for family in FAMILIES {
                 if ui
                     .selectable_label(shell.font_family == family, family)
@@ -218,6 +223,24 @@ fn font_dropdown(ui: &mut egui::Ui, shell: &mut Shell) {
                 {
                     shell.font_family = family;
                     ui.close();
+                }
+            }
+            let sys = crate::ui::fonts::system_fonts();
+            if !sys.is_empty() {
+                ui.separator();
+                ui.label(
+                    egui::RichText::new("System Fonts")
+                        .small()
+                        .color(egui::Color32::GRAY),
+                );
+                for f in sys {
+                    if ui
+                        .selectable_label(shell.font_family == f.name, f.name)
+                        .clicked()
+                    {
+                        shell.font_family = f.name;
+                        ui.close();
+                    }
                 }
             }
         });
@@ -584,10 +607,16 @@ fn opening_from(value: &str) -> OpenBehavior {
 /// from a newer list would ask the editor to draw in a font that is not there, so the
 /// default family takes it instead.
 fn font_from(value: &str) -> &'static str {
-    FAMILIES
-        .into_iter()
-        .find(|family| *family == value)
-        .unwrap_or(defaults().font_family)
+    if let Some(family) = FAMILIES.into_iter().find(|family| *family == value) {
+        family
+    } else if let Some(sys) = crate::ui::fonts::system_fonts()
+        .iter()
+        .find(|f| f.name == value)
+    {
+        sys.name
+    } else {
+        defaults().font_family
+    }
 }
 
 /// Reads the settings at a path, for the tests that assert on the file itself.

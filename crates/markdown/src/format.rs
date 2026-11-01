@@ -174,6 +174,30 @@ pub fn toggle_inline(text: &str, selection: Range, kind: Inline) -> Option<Outco
     Some(apply(text, &wrap, selection))
 }
 
+/// Returns whether `selection` is wrapped by `kind`'s markers or encloses them.
+pub fn is_inline_active(text: &str, selection: Range, kind: Inline) -> bool {
+    if !selection.is_within(text) {
+        return false;
+    }
+    let open = kind.marker();
+    let close = kind.close_marker();
+    let open_width = open.len();
+    let close_width = close.len();
+
+    if find_enclosing_inline(text, selection, open, close).is_some() {
+        return true;
+    }
+
+    if selection.len() >= open_width + close_width
+        && followed_by(text, selection.start, open)
+        && preceded_by(text, selection.end, close)
+    {
+        return true;
+    }
+
+    false
+}
+
 /// Finds `(open_range, close_range)` of `open` and `close` sitting immediately outside
 /// `selection`, or outside any other inline markers that immediately wrap `selection`.
 fn find_enclosing_inline(
