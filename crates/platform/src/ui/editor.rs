@@ -1113,10 +1113,11 @@ fn layout_rich_text(
         let slice = &text[run.vis_range.clone()];
         let s = &run.style;
         let family = if let Some(ref fam) = s.font_family {
-            if crate::ui::fonts::is_font_bound(fam) || crate::ui::fonts::ensure_font(ui.ctx(), fam)
-            {
-                egui::FontFamily::Name(fam.clone().into())
+            let fam_id = egui::FontFamily::Name(fam.clone().into());
+            if ui.fonts(|f| f.definitions().families.contains_key(&fam_id)) {
+                fam_id
             } else {
+                crate::ui::fonts::ensure_font(ui.ctx(), fam);
                 base_font.family.clone()
             }
         } else {
@@ -1180,9 +1181,9 @@ fn paint_rich_bold_pass(
         let slice = &projection.visible[run.vis_range.clone()];
         let s = &run.style;
         let family = if let Some(ref fam) = s.font_family {
-            if crate::ui::fonts::is_font_bound(fam) || crate::ui::fonts::ensure_font(ui.ctx(), fam)
-            {
-                egui::FontFamily::Name(fam.clone().into())
+            let fam_id = egui::FontFamily::Name(fam.clone().into());
+            if ui.fonts(|f| f.definitions().families.contains_key(&fam_id)) {
+                fam_id
             } else {
                 base_font.family.clone()
             }

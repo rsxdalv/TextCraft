@@ -274,6 +274,7 @@ pub fn ensure_font(ctx: &Context, name: &str) -> bool {
                 .unwrap_or_else(|| DEFAULT.to_owned());
             ctx.data_mut(|data| data.remove_temp::<String>(installed_key()));
             apply(ctx, &current);
+            ctx.request_repaint();
             return true;
         }
     }
