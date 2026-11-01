@@ -26,14 +26,13 @@ use crate::ui::state::AppTheme;
 
 /// Every colour the shell paints.
 ///
-/// `Copy`: it is twelve colours, and threading it by value means a helper that
-/// needs one of them cannot be handed a half-updated window.
+/// `Copy`: threading it by value means a helper that needs one of them cannot be
+/// handed a half-updated window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Palette {
     /// The editor and window background, and the active tab's fill.
     pub bg: Color32,
-    /// The title bar (tabs and caption buttons): a step off the menu bar below it, so
-    /// the two rows read as separate layers.
+    /// The title bar (tabs and caption buttons).
     pub title: Color32,
     /// The menu bar, toolbar, and status bar background.
     pub chrome: Color32,
@@ -41,6 +40,12 @@ pub struct Palette {
     pub line: Color32,
     /// The background of a settings card.
     pub card: Color32,
+    /// The background of the `WORKSPACE` sidebar panel.
+    pub sidebar_bg: Color32,
+    /// The background of the line-numbers gutter.
+    pub gutter_bg: Color32,
+    /// The text colour of the line numbers in the gutter.
+    pub gutter_text: Color32,
     /// A card / row hover fill, and the inactive tab's hover.
     pub row_hover: Color32,
     /// The generic widget hover fill.
@@ -59,8 +64,10 @@ pub struct Palette {
     /// in both palettes: the hairline grey a light border needs for a card edge is
     /// too faint to read behind a white knob.
     pub switch_off: Color32,
-    /// The accent: toggles, links, the active-tab underline.
+    /// The accent: toggles, links, active toolbar buttons, active sidebar items.
     pub accent: Color32,
+    /// Darker ring/border around accent-filled controls (`#1E4D38` in `gui2`).
+    pub accent_border: Color32,
     /// The accent, dimmed for selection backgrounds.
     pub accent_soft: Color32,
     /// Warning text: a dialog's error line.
@@ -73,45 +80,53 @@ pub struct Palette {
 }
 
 impl Palette {
-    /// The dark palette, matched to the reference screenshots.
+    /// The dark Pine-Slate palette, matched to the `gui2` dark configuration.
     pub const DARK: Palette = Palette {
-        bg: Color32::from_rgb(0x25, 0x25, 0x25),
-        title: Color32::from_rgb(0x1c, 0x1c, 0x1c),
-        chrome: Color32::from_rgb(0x2e, 0x2e, 0x2e),
-        line: Color32::from_rgb(0x26, 0x26, 0x26),
-        card: Color32::from_rgb(0x2e, 0x2e, 0x2e),
-        row_hover: Color32::from_rgb(0x3c, 0x3c, 0x3c),
-        hover: Color32::from_rgba_premultiplied(0x44, 0x44, 0x44, 255),
-        active: Color32::from_rgba_premultiplied(0x55, 0x55, 0x55, 255),
-        text: Color32::from_rgb(0xf0, 0xf0, 0xf0),
-        text_dim: Color32::from_rgb(0xae, 0xae, 0xae),
-        border: Color32::from_rgb(0x4a, 0x4a, 0x4a),
-        switch_off: Color32::from_rgb(0x5c, 0x5c, 0x5c),
-        accent: Color32::from_rgb(0x4c, 0xc2, 0xff),
-        accent_soft: Color32::from_rgba_premultiplied(0x2a, 0x6a, 0x8c, 255),
+        bg: Color32::from_rgb(0x1e, 0x1f, 0x1f),
+        title: Color32::from_rgb(0x23, 0x32, 0x2d),
+        chrome: Color32::from_rgb(0x2d, 0x3e, 0x38),
+        line: Color32::from_rgb(0x3b, 0x4e, 0x47),
+        card: Color32::from_rgb(0x23, 0x32, 0x2d),
+        sidebar_bg: Color32::from_rgb(0x23, 0x32, 0x2d),
+        gutter_bg: Color32::from_rgb(0x19, 0x1b, 0x1a),
+        gutter_text: Color32::from_rgb(0x58, 0x6b, 0x64),
+        row_hover: Color32::from_rgb(0x38, 0x4d, 0x46),
+        hover: Color32::from_rgba_premultiplied(0x38, 0x4d, 0x46, 255),
+        active: Color32::from_rgba_premultiplied(0x48, 0x61, 0x58, 255),
+        text: Color32::from_rgb(0xf1, 0xf5, 0xf4),
+        text_dim: Color32::from_rgb(0x87, 0x9b, 0x93),
+        border: Color32::from_rgb(0x3b, 0x4e, 0x47),
+        switch_off: Color32::from_rgb(0x58, 0x6b, 0x64),
+        accent: Color32::from_rgb(0x3d, 0x8b, 0x68),
+        accent_border: Color32::from_rgb(0x27, 0x5c, 0x44),
+        accent_soft: Color32::from_rgba_premultiplied(0x2f, 0x4b, 0x41, 255),
         danger: Color32::from_rgb(0xff, 0x8a, 0x80),
-        popup: Color32::from_rgb(0x2c, 0x2c, 0x2c),
+        popup: Color32::from_rgb(0x23, 0x32, 0x2d),
         dark: true,
     };
 
-    /// The light palette: the same relationships, read off a white page.
+    /// The default light Warm Paper & Pine-Slate palette from `gui2`.
     pub const LIGHT: Palette = Palette {
-        bg: Color32::from_rgb(0xff, 0xff, 0xff),
-        title: Color32::from_rgb(0xe3, 0xe3, 0xe3),
-        chrome: Color32::from_rgb(0xf3, 0xf3, 0xf3),
-        line: Color32::from_rgb(0xdc, 0xdc, 0xdc),
-        card: Color32::from_rgb(0xf3, 0xf3, 0xf3),
-        row_hover: Color32::from_rgb(0xe2, 0xe2, 0xe2),
-        hover: Color32::from_rgba_premultiplied(0, 0, 0, 30),
-        active: Color32::from_rgba_premultiplied(0, 0, 0, 52),
-        text: Color32::from_rgb(0x1a, 0x1a, 0x1a),
-        text_dim: Color32::from_rgb(0x5a, 0x5a, 0x5a),
-        border: Color32::from_rgb(0xc6, 0xc6, 0xc6),
-        switch_off: Color32::from_rgb(0x8a, 0x8a, 0x8a),
-        accent: Color32::from_rgb(0x00, 0x5f, 0xb8),
-        accent_soft: Color32::from_rgb(0xcc, 0xe4, 0xf7),
+        bg: Color32::from_rgb(0xfa, 0xf9, 0xf6),
+        title: Color32::from_rgb(0xdc, 0xe5, 0xe1),
+        chrome: Color32::from_rgb(0xdc, 0xe5, 0xe1),
+        line: Color32::from_rgb(0xc7, 0xd5, 0xcf),
+        card: Color32::from_rgb(0xeb, 0xf0, 0xee),
+        sidebar_bg: Color32::from_rgb(0xeb, 0xf0, 0xee),
+        gutter_bg: Color32::from_rgb(0xf3, 0xf1, 0xec),
+        gutter_text: Color32::from_rgb(0x9b, 0xa8, 0xa1),
+        row_hover: Color32::from_rgb(0xd3, 0xdd, 0xd9),
+        hover: Color32::from_rgba_premultiplied(0xd0, 0xdd, 0xd8, 255),
+        active: Color32::from_rgba_premultiplied(0xc7, 0xd5, 0xcf, 255),
+        text: Color32::from_rgb(0x1e, 0x26, 0x23),
+        text_dim: Color32::from_rgb(0x4f, 0x64, 0x5b),
+        border: Color32::from_rgb(0xc7, 0xd5, 0xcf),
+        switch_off: Color32::from_rgb(0x75, 0x8a, 0x81),
+        accent: Color32::from_rgb(0x2d, 0x6a, 0x4f),
+        accent_border: Color32::from_rgb(0x1e, 0x4d, 0x38),
+        accent_soft: Color32::from_rgb(0xd7, 0xe3, 0xdc),
         danger: Color32::from_rgb(0xc5, 0x0f, 0x1f),
-        popup: Color32::from_rgb(0xf3, 0xf3, 0xf3),
+        popup: Color32::from_rgb(0xfa, 0xf9, 0xf6),
         dark: false,
     };
 
@@ -141,11 +156,11 @@ impl Palette {
             AppTheme::Light => Self::LIGHT,
             AppTheme::Dark => Self::DARK,
             AppTheme::System => match system {
-                Some(Theme::Light) => Self::LIGHT,
-                // A dark system and no answer at all both keep the dark palette:
+                Some(Theme::Dark) => Self::DARK,
+                // A light system and no answer at all both keep the light palette:
                 // "follow the system" cannot be rendered until the platform says
-                // something, and the look to hold it at is the captured one.
-                Some(Theme::Dark) | None => Self::DARK,
+                // something, and the look to hold it at is the captured gui2 one.
+                Some(Theme::Light) | None => Self::LIGHT,
             },
         }
     }
@@ -309,7 +324,7 @@ mod tests {
         );
         assert_eq!(
             Palette::for_choice(AppTheme::System, None),
-            Palette::DARK,
+            Palette::LIGHT,
             "no answer from the system keeps the captured look"
         );
     }

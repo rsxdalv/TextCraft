@@ -50,6 +50,8 @@ pub(crate) struct RunStyle {
     pub(crate) code: bool,
     /// A link's label, drawn in the accent colour.
     pub(crate) link: bool,
+    /// An explicit inline RGB colour (`<span style="color: #RRGGBB">`).
+    pub(crate) color: Option<[u8; 3]>,
 }
 
 /// How a block is drawn: its size, weight, nesting, and list marker.
@@ -106,6 +108,10 @@ pub(crate) fn runs(content: &str) -> Vec<Run> {
             },
             SpanKind::Link | SpanKind::Image | SpanKind::AutoLink => RunStyle {
                 link: true,
+                ..Default::default()
+            },
+            SpanKind::Color(rgb) => RunStyle {
+                color: Some(rgb),
                 ..Default::default()
             },
         };
@@ -265,7 +271,9 @@ fn rich_text(run: &Run, view: &BlockView, base: f32, palette: Palette) -> RichTe
     if run.style.strike {
         rich = rich.strikethrough();
     }
-    if run.style.link {
+    if let Some([r, g, b]) = run.style.color {
+        rich.color(egui::Color32::from_rgb(r, g, b))
+    } else if run.style.link {
         rich.color(palette.accent).underline()
     } else if view.dim {
         rich.color(palette.text_dim)

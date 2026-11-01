@@ -448,7 +448,7 @@ impl Settings {
 /// constant, only because the page setup holds the header/footer text.
 fn defaults() -> Settings {
     Settings {
-        theme: AppTheme::Dark,
+        theme: AppTheme::Light,
         font_family: crate::ui::fonts::DEFAULT,
         zoom: 100,
         word_wrap: true,
@@ -731,7 +731,7 @@ mod tests {
         /// One setting, moved, with the label to name in a failure.
         type Change = (&'static str, fn(&mut Shell));
         let changes: [Change; 9] = [
-            ("theme", |shell| shell.theme = AppTheme::Light),
+            ("theme", |shell| shell.theme = AppTheme::Dark),
             ("font", |shell| shell.font_family = "Fira Mono"),
             ("zoom", |shell| shell.zoom = 130),
             ("word wrap", |shell| shell.word_wrap = false),
@@ -817,7 +817,7 @@ mod tests {
         // against what the system says now — see theme::Palette::for_choice.
         assert_eq!(
             restored.palette,
-            crate::ui::theme::Palette::DARK,
+            crate::ui::theme::Palette::LIGHT,
             "as shipped"
         );
     }

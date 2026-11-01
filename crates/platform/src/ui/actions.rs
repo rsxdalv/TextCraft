@@ -21,8 +21,8 @@ use egui::Context;
 use crate::clock;
 use crate::ui::editor;
 use crate::ui::state::{
-    DocKind, FileDialog, FileDialogMode, OpenBehavior, ParagraphStyle, PendingReplace, Prompt,
-    SaveThen, Shell, SpellDialog, Tab,
+    DocKind, EditorMode, FileDialog, FileDialogMode, MarkdownViewMode, OpenBehavior,
+    ParagraphStyle, PendingReplace, Prompt, SaveThen, Shell, SpellDialog, Tab,
 };
 use nc_commands::CommandId;
 use nc_core::Clipboard;
@@ -55,11 +55,20 @@ pub fn run(shell: &mut Shell, ctx: &Context, id: CommandId) {
         "cmd.edit.paste" => request_paste(ctx),
         "cmd.edit.time_date" => insert_time_date(shell, clock::now_utc()),
         "cmd.view.status_bar" => shell.status_bar_visible = !shell.status_bar_visible,
+        "cmd.view.sidebar" => shell.sidebar_visible = !shell.sidebar_visible,
         "cmd.view.word_wrap" => shell.word_wrap = !shell.word_wrap,
         "cmd.view.zoom_in" => shell.zoom = (shell.zoom + 10).min(500),
         "cmd.view.zoom_out" => shell.zoom = shell.zoom.saturating_sub(10).max(10),
         "cmd.view.zoom_reset" => shell.zoom = 100,
         "cmd.view.md_source" => back_to_source(shell),
+        "cmd.view.md_split" => {
+            if let Some(tab) = shell
+                .active_tab_mut()
+                .filter(|tab| tab.kind == DocKind::Markdown)
+            {
+                tab.set_view_mode(MarkdownViewMode::Split);
+            }
+        }
         "cmd.view.md_formatted" => {
             // Guarded by kind rather than by availability alone: the flag means
             // "this document is being rendered", and a plain document has no
@@ -68,10 +77,11 @@ pub fn run(shell: &mut Shell, ctx: &Context, id: CommandId) {
                 .active_tab_mut()
                 .filter(|tab| tab.kind == DocKind::Markdown)
             {
-                tab.formatted = true;
+                tab.set_view_mode(MarkdownViewMode::Preview);
             }
         }
         "cmd.app.settings" => shell.show_settings = !shell.show_settings,
+        "cmd.view.toggle_editor_mode" => toggle_editor_mode(shell),
         "cmd.edit.find" => open_find(shell, false),
         "cmd.edit.replace" => open_find(shell, true),
         "cmd.edit.find_next" => search_step(shell, Direction::Forward),
@@ -82,7 +92,22 @@ pub fn run(shell: &mut Shell, ctx: &Context, id: CommandId) {
         // The engine decides the bytes; `apply_format` writes them.
         "cmd.md.bold" => format_inline(shell, Inline::Bold),
         "cmd.md.italic" => format_inline(shell, Inline::Italic),
+        "cmd.md.underline" => format_inline(shell, Inline::Underline),
         "cmd.md.strike" => format_inline(shell, Inline::Strike),
+        "cmd.md.highlight" => format_inline(shell, Inline::Highlight),
+        "cmd.md.text_color" => {
+            let hex = shell.text_color.hex();
+            apply_format(shell, move |text, selection| {
+                nc_markdown::set_text_color(text, selection, hex)
+            });
+        }
+        "cmd.md.checklist" => apply_format(shell, nc_markdown::toggle_checklist),
+        "cmd.md.quote" => apply_format(shell, nc_markdown::toggle_quote),
+        "cmd.md.code" => apply_format(shell, nc_markdown::toggle_code),
+        "cmd.md.hr" => apply_format(shell, nc_markdown::insert_horizontal_rule),
+        "cmd.md.image" => apply_format(shell, |text, selection| {
+            nc_markdown::insert_image(text, selection, "")
+        }),
         "cmd.md.link" => apply_format(shell, |text, selection| {
             // The URL prompt is not built yet, so the command writes the syntax
             // and leaves the caret between the parentheses to type into.
@@ -157,12 +182,15 @@ pub fn handles(id: CommandId) -> bool {
             | "cmd.edit.go_to"
             | "cmd.edit.spell_suggest"
             | "cmd.view.status_bar"
+            | "cmd.view.sidebar"
             | "cmd.view.word_wrap"
             | "cmd.view.zoom_in"
             | "cmd.view.zoom_out"
             | "cmd.view.zoom_reset"
             | "cmd.view.md_source"
+            | "cmd.view.md_split"
             | "cmd.view.md_formatted"
+            | "cmd.view.toggle_editor_mode"
             | "cmd.app.settings"
             | "cmd.format.title"
             | "cmd.format.subtitle"
@@ -173,7 +201,15 @@ pub fn handles(id: CommandId) -> bool {
             | "cmd.format.body"
             | "cmd.md.bold"
             | "cmd.md.italic"
+            | "cmd.md.underline"
             | "cmd.md.strike"
+            | "cmd.md.highlight"
+            | "cmd.md.text_color"
+            | "cmd.md.checklist"
+            | "cmd.md.quote"
+            | "cmd.md.code"
+            | "cmd.md.hr"
+            | "cmd.md.image"
             | "cmd.md.link"
             | "cmd.md.table"
             | "cmd.md.clear"
@@ -1208,7 +1244,7 @@ fn back_to_source(shell: &mut Shell) {
     let Some(tab) = shell.active_tab_mut() else {
         return;
     };
-    tab.formatted = false;
+    tab.set_view_mode(MarkdownViewMode::Raw);
     let selection = tab.document_mut().selection();
     let (anchor, head) = {
         let text = tab.text();
@@ -1218,6 +1254,27 @@ fn back_to_source(shell: &mut Shell) {
         )
     };
     shell.pending_selection = Some((head, anchor));
+}
+
+/// Switches between Rich Text Editor mode (`EditorMode::Text`) and Full Code Editor mode (`EditorMode::Code`),
+/// keeping the active selection in place across the transition.
+pub fn toggle_editor_mode(shell: &mut Shell) {
+    shell.editor_mode = match shell.editor_mode {
+        EditorMode::Text => EditorMode::Code,
+        EditorMode::Code => EditorMode::Text,
+    };
+    if let Some(tab) = shell.active_tab_mut() {
+        let selection = tab.document_mut().selection();
+        let (anchor, head) = {
+            let text = tab.text();
+            (
+                editor::char_index(text, selection.anchor()),
+                editor::char_index(text, selection.head()),
+            )
+        };
+        shell.caret = head;
+        shell.pending_selection = Some((head, anchor));
+    }
 }
 
 /// The ATX level a paragraph style writes.
@@ -1269,6 +1326,15 @@ fn apply_format(
     if document.replace_range(start..before_end, &outcome.text[start..after_end]) {
         document.select(outcome.selection.start, outcome.selection.end);
     }
+    let (anchor, head) = {
+        let text = tab.text();
+        (
+            editor::char_index(text, outcome.selection.start),
+            editor::char_index(text, outcome.selection.end),
+        )
+    };
+    shell.caret = head;
+    shell.pending_selection = Some((head, anchor));
 }
 
 /// Toggles `kind` around the active document's selection.

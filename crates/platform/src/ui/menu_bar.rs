@@ -3,7 +3,10 @@
 
 use egui::{Align, Color32, Context, Event, Key, Layout, Modifiers, RichText, WidgetType};
 
-use crate::ui::state::{ParagraphStyle, Shell};
+use crate::ui::fonts::FAMILIES;
+use crate::ui::state::{
+    AppTheme, DocKind, EditorMode, MarkdownViewMode, ParagraphStyle, Shell, TextColor,
+};
 use crate::ui::theme::Palette;
 use crate::ui::{a11y, actions, icons, spacing, widgets};
 use nc_commands::{CommandId, MenuItem, all_disabled, build_menu_bar, by_id};
@@ -14,39 +17,64 @@ pub const HEIGHT: f32 = 34.0;
 /// Width of the control that holds the formatting toolbar when it does not fit.
 const OVERFLOW_WIDTH: f32 = 30.0;
 
+/// Number of semantic control groups in the central formatting toolbar.
+const GROUP_COUNT: usize = 5;
+
+/// Width of the vertical hairline divider plus spacing between groups.
+const GROUP_GAP: f32 = 9.0;
+
 /// The widths the bar's groups took the last time each was drawn inline, kept in
-/// the context so the next frame can decide whether the formatting group still fits
-/// before drawing it. A group not yet measured is assumed to fit.
-#[derive(Clone, Copy, Default)]
+/// the context so the next frame can decide which groups fit inline before drawing them.
+#[derive(Clone, Copy, PartialEq)]
 struct Measured {
-    format: f32,
+    groups: [f32; GROUP_COUNT],
     right: f32,
 }
 
-fn measured_id() -> egui::Id {
-    egui::Id::new("nc_top_bar_widths")
+impl Default for Measured {
+    fn default() -> Self {
+        Self {
+            groups: [210.0, 146.0, 110.0, 136.0, 112.0],
+            right: 190.0,
+        }
+    }
 }
 
-/// Whether a group of `natural` width fits in `available`, by `craft-ui`'s toolbar rule.
-fn fits(natural: f32, available: f32) -> bool {
-    if natural <= 0.0 {
-        return true;
+fn measured_id(mode: EditorMode) -> egui::Id {
+    egui::Id::new(("nc_top_bar_widths", mode == EditorMode::Code))
+}
+
+/// Computes how many of the `GROUP_COUNT` toolbar groups fit in `available`.
+fn fit_groups(groups: &[f32; GROUP_COUNT], available: f32) -> (usize, bool) {
+    let total: f32 =
+        groups.iter().sum::<f32>() + GROUP_GAP * (GROUP_COUNT.saturating_sub(1) as f32);
+    if total <= available {
+        return (GROUP_COUNT, false);
     }
-    craft_ui::layout::fit_toolbar(&[natural], available, spacing::SM, OVERFLOW_WIDTH)
-        .is_some_and(|fit| fit.overflow.is_empty())
+    if let Some(fit) =
+        craft_ui::layout::fit_toolbar(groups, available.max(0.0), GROUP_GAP, OVERFLOW_WIDTH)
+    {
+        (fit.shown.len(), !fit.overflow.is_empty())
+    } else {
+        (0, true)
+    }
 }
 
 /// Draws the top bar.
 ///
-/// When the window is too narrow for the formatting group, it moves into a `»`
-/// menu rather than being clipped or dropped, so every command stays reachable.
+/// When the window is too narrow for all formatting groups at once, smart compacting
+/// shrinks labels first and then moves only the rightmost overflowing groups into the
+/// `...` (`More formatting`) menu so primary formatting icons stay visible on the bar.
 pub fn show(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context) {
+    let mode_for_measure = shell.editor_mode;
     let measured: Measured = ctx
-        .data(|data| data.get_temp(measured_id()))
+        .data(|data| data.get_temp(measured_id(mode_for_measure)))
         .unwrap_or_default();
     let mut now = measured;
 
     let bar = ui.max_rect();
+    let compact = bar.width() < 1320.0;
+    let icon_only_theme = bar.width() < 1100.0;
     ui.painter().hline(
         bar.x_range(),
         bar.bottom() - 0.5,
@@ -56,7 +84,7 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context) {
     ui.horizontal_centered(|ui| {
         ui.add_space(spacing::XS);
         let palette = shell.palette;
-        menus(shell, ui, ctx, palette);
+        menus(shell, ui, ctx, palette, compact);
         // `Settings ▸ Formatting` off takes the formatting half of the bar away, which is
         // the whole of what that switch's acceptance row asks for (`NC-P005`). The divider
         // goes with it: it is the seam between the menus and this group, and a divider to
@@ -64,34 +92,70 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context) {
         // in `docs/ui-reference.md` §4 — the accelerators keep formatting, because nothing
         // in the capture shows a formatting key that has stopped.
         if shell.formatting {
-            let available = ui.available_width() - measured.right - spacing::MD;
-            if fits(measured.format, available) {
-                // Centred in the window, unless the menus on the left leave no room
-                // for that, in which case it sits right after them.
-                let centred = bar.center().x - measured.format / 2.0;
-                let gap = (centred - ui.cursor().left()).max(spacing::MD);
-                ui.add_space(gap.min((available - measured.format).max(0.0)));
+            let side_pad = if compact { spacing::SM } else { spacing::MD };
+            let available = (ui.available_width() - measured.right - side_pad).max(0.0);
+            let (shown_count, has_overflow) = fit_groups(&measured.groups, available);
+            let inline_width: f32 = measured.groups[..shown_count].iter().sum::<f32>()
+                + GROUP_GAP * (shown_count.saturating_sub(1) as f32)
+                + if has_overflow {
+                    OVERFLOW_WIDTH + if shown_count > 0 { GROUP_GAP } else { 0.0 }
+                } else {
+                    0.0
+                };
+
+            let centred = bar.center().x - inline_width / 2.0;
+            let gap = (centred - ui.cursor().left()).max(side_pad);
+            ui.add_space(
+                gap.min((available - inline_width).max(0.0))
+                    .max(spacing::XS),
+            );
+
+            let saved_gap = std::mem::replace(&mut ui.spacing_mut().item_spacing.x, 2.0);
+            for group_idx in 0..shown_count {
+                if group_idx > 0 {
+                    toolbar_divider(ui, palette);
+                }
                 let start = ui.cursor().left();
-                format_toolbar(shell, ui, ctx, palette);
-                now.format = ui.cursor().left() - start;
-            } else {
-                ui.add_space(spacing::MD);
-                let more = ui.menu_button(icons::glyph("overflow", palette.text), |ui| {
-                    ui.horizontal(|ui| format_toolbar(shell, ui, ctx, palette));
-                });
-                a11y::label(&more.response, WidgetType::ComboBox, "More formatting");
+                draw_toolbar_group(group_idx, shell, ui, ctx, palette, compact);
+                let w = ui.cursor().left() - start;
+                if w > 0.0 {
+                    now.groups[group_idx] = w;
+                }
             }
+
+            if has_overflow {
+                if shown_count > 0 {
+                    toolbar_divider(ui, palette);
+                }
+                let more = ui
+                    .menu_button(icons::glyph("overflow", palette.text), |ui| {
+                        ui.spacing_mut().item_spacing = egui::vec2(2.0, 4.0);
+                        for (idx, group_idx) in (shown_count..GROUP_COUNT).enumerate() {
+                            if idx > 0 {
+                                ui.add(egui::Separator::default().spacing(2.0));
+                            }
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 2.0;
+                                draw_toolbar_group(group_idx, shell, ui, ctx, palette, false);
+                            });
+                        }
+                    })
+                    .response
+                    .on_hover_text("More formatting");
+                a11y::label(&more, WidgetType::ComboBox, "More formatting");
+            }
+            ui.spacing_mut().item_spacing.x = saved_gap;
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.add_space(spacing::MD);
+            ui.add_space(if compact { spacing::SM } else { spacing::MD });
             let before = ui.available_width();
-            right_toolbar(shell, ui, ctx, palette);
+            right_toolbar(shell, ui, ctx, palette, compact, icon_only_theme);
             now.right = before - ui.available_width();
         });
     });
 
-    if now.format != measured.format || now.right != measured.right {
-        ctx.data_mut(|data| data.insert_temp(measured_id(), now));
+    if now != measured {
+        ctx.data_mut(|data| data.insert_temp(measured_id(mode_for_measure), now));
     }
 }
 
@@ -105,25 +169,32 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context) {
 ///   open above the bar or slid up over it.
 /// - **Hover switching.** Once one menu is open, moving the pointer over a neighbouring
 ///   button opens that one instead (`File` → `Edit` → `View`) without another click.
-fn menus(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palette) {
+fn menus(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palette, compact: bool) {
     let models = build_menu_bar(shell.availability());
     let marks = mnemonics(models.iter().map(|model| model.menu.label()));
     let show_keys = access_keys_visible(ctx);
     let bar_bottom = ui.max_rect().bottom();
 
     // Every button first, so hover switching can see all of them before any popup is drawn.
-    let saved_gap = std::mem::replace(&mut ui.spacing_mut().item_spacing.x, 4.0);
+    let gap = if compact { 2.0 } else { 4.0 };
+    let min_w = if compact { 30.0 } else { MENU_BUTTON_WIDTH };
+    let saved_gap = std::mem::replace(&mut ui.spacing_mut().item_spacing.x, gap);
+    let saved_pad = ui.spacing().button_padding;
+    if compact {
+        ui.spacing_mut().button_padding = egui::vec2(5.0, 4.0);
+    }
     let mut buttons = Vec::with_capacity(models.len());
     for (model, mark) in models.iter().zip(&marks) {
         let id = egui::Id::new(("nc_menu_button", model.menu.label()));
         let open = egui::Popup::is_id_open(ctx, id);
         let response = ui.add(
             egui::Button::new(access_text(ui, model.menu.label(), *mark, show_keys))
-                .min_size(egui::vec2(MENU_BUTTON_WIDTH, MENU_BUTTON_HEIGHT))
+                .min_size(egui::vec2(min_w, MENU_BUTTON_HEIGHT))
                 .selected(open),
         );
         buttons.push(response);
     }
+    ui.spacing_mut().button_padding = saved_pad;
     ui.spacing_mut().item_spacing.x = saved_gap;
 
     let popup_id = |index: usize| egui::Popup::default_response_id(&buttons[index]);
@@ -317,8 +388,8 @@ fn menu_style(ui: &mut egui::Ui, palette: Palette) {
 }
 
 /// The minimum size of a top-level menu button: a target generous enough to hit
-/// without aiming, and wide enough that `File`, `Edit` and `View` read as a set.
-const MENU_BUTTON_WIDTH: f32 = 40.0;
+/// without aiming, and wide enough that `File`, `Edit`, `View`, `Insert`, and `Format` read as a set.
+const MENU_BUTTON_WIDTH: f32 = 36.0;
 const MENU_BUTTON_HEIGHT: f32 = 26.0;
 
 /// Renders one dropdown's items.
@@ -527,43 +598,416 @@ fn command_button_with_access(
     ui.add_enabled(enabled, button).clicked()
 }
 
-/// The formatting controls in the middle of the bar.
-fn format_toolbar(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palette) {
-    paragraph_menu(shell, ui, ctx, palette);
-    list_menu(shell, ui, ctx, palette);
+/// A vertical hairline divider between Ribbon control groups (`gui2`).
+fn toolbar_divider(ui: &mut egui::Ui, palette: Palette) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(5.0, 16.0), egui::Sense::hover());
+    ui.painter().vline(
+        rect.center().x,
+        rect.y_range(),
+        egui::Stroke::new(1.0, palette.line),
+    );
+}
 
-    let bold = widgets::rich_button(ui, RichText::new("B").strong()).on_hover_text("Bold");
+/// Promotes an untitled tab to Markdown when a formatting toolbar action is triggered,
+/// so formatting works immediately in Rich Text mode without requiring `.md` save first.
+fn promote_untitled_to_markdown(shell: &mut Shell) {
+    if let Some(tab) = shell.active_tab_mut() {
+        if !tab.file.has_path() {
+            tab.kind = DocKind::Markdown;
+        }
+    }
+}
+
+/// Draws one of the `GROUP_COUNT` semantic groups of the central toolbar.
+fn draw_toolbar_group(
+    group_idx: usize,
+    shell: &mut Shell,
+    ui: &mut egui::Ui,
+    ctx: &Context,
+    palette: Palette,
+    compact: bool,
+) {
+    if shell.editor_mode == EditorMode::Code {
+        match group_idx {
+            0 => group_code_navigation(shell, ui, ctx, palette),
+            1 => group_code_structure(shell, ui, ctx, palette),
+            2 => group_code_options(shell, ui, ctx, palette),
+            3 => group_typography(shell, ui, ctx, palette, compact),
+            4 => group_view_mode(shell, ui, ctx, palette, compact),
+            _ => {}
+        }
+        return;
+    }
+    match group_idx {
+        0 => group_inline(shell, ui, ctx, palette),
+        1 => group_blocks(shell, ui, ctx, palette),
+        2 => group_insert(shell, ui, ctx, palette),
+        3 => group_typography(shell, ui, ctx, palette, compact),
+        4 => group_view_mode(shell, ui, ctx, palette, compact),
+        _ => {}
+    }
+}
+
+/// Code Editor Group 0: Search & Line Navigation (`Find`, `Replace`, `Go to Ln`).
+fn group_code_navigation(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palette) {
+    for (label, hover, cmd_id) in [
+        ("Find", "Find (Ctrl+F)", "cmd.edit.find"),
+        ("Replace", "Replace (Ctrl+H)", "cmd.edit.replace"),
+        ("Ln :", "Go to line (Ctrl+G)", "cmd.edit.go_to"),
+    ] {
+        let resp = ui
+            .add(
+                egui::Button::new(
+                    RichText::new(label)
+                        .monospace()
+                        .size(11.0)
+                        .color(palette.text),
+                )
+                .min_size(egui::vec2(38.0, 22.0)),
+            )
+            .on_hover_text(hover);
+        a11y::label(&resp, WidgetType::Button, hover);
+        if resp.clicked() {
+            actions::run(shell, ctx, CommandId(cmd_id));
+        }
+    }
+}
+
+/// Code Editor Group 1: Indentation & Code Blocks (`<<`, `>>`, `</>`, `---`).
+fn group_code_structure(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palette) {
+    let outdent = ui
+        .add(
+            egui::Button::new(RichText::new("⇤").size(12.0).color(palette.text))
+                .min_size(egui::vec2(24.0, 22.0)),
+        )
+        .on_hover_text("Decrease indent");
+    a11y::label(&outdent, WidgetType::Button, "Decrease indent");
+    if outdent.clicked() {
+        promote_untitled_to_markdown(shell);
+        actions::run(shell, ctx, CommandId("cmd.md.indent_decrease"));
+    }
+
+    let indent = ui
+        .add(
+            egui::Button::new(RichText::new("⇥").size(12.0).color(palette.text))
+                .min_size(egui::vec2(24.0, 22.0)),
+        )
+        .on_hover_text("Increase indent");
+    a11y::label(&indent, WidgetType::Button, "Increase indent");
+    if indent.clicked() {
+        promote_untitled_to_markdown(shell);
+        actions::run(shell, ctx, CommandId("cmd.md.indent_increase"));
+    }
+
+    let code = icons::button(ui, "Code", "code", palette).on_hover_text("Wrap in code block");
+    a11y::label(&code, WidgetType::Button, "Code");
+    if code.clicked() {
+        promote_untitled_to_markdown(shell);
+        actions::run(shell, ctx, CommandId("cmd.md.code"));
+    }
+}
+
+/// Code Editor Group 2: Word Wrap & Workspace Sidebar toggles.
+fn group_code_options(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palette) {
+    let wrap_active = shell.word_wrap;
+    let mut wrap_btn = egui::Button::new(RichText::new("Wrap").monospace().size(11.0).color(
+        if wrap_active {
+            Color32::WHITE
+        } else {
+            palette.text
+        },
+    ))
+    .min_size(egui::vec2(40.0, 22.0));
+    if wrap_active {
+        wrap_btn = wrap_btn.fill(palette.accent);
+    }
+    let wrap_resp = ui.add(wrap_btn).on_hover_text("Toggle word wrap");
+    a11y::label(&wrap_resp, WidgetType::Button, "Word wrap");
+    if wrap_resp.clicked() {
+        actions::run(shell, ctx, CommandId("cmd.view.word_wrap"));
+    }
+}
+
+/// Group 0: Paragraph style + inline formatting (`H1▾`, `B`, `I`, `U`, `S`, `Highlight`, `Text color`).
+fn group_inline(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palette) {
+    paragraph_menu(shell, ui, ctx, palette);
+
+    let bold = ui
+        .add(
+            egui::Button::new(RichText::new("B").strong().color(Color32::WHITE))
+                .fill(palette.accent)
+                .min_size(egui::vec2(26.0, 26.0)),
+        )
+        .on_hover_text("Bold");
     a11y::label(&bold, WidgetType::Button, "Bold");
     if bold.clicked() {
+        promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.bold"));
     }
     let italic = widgets::rich_button(ui, RichText::new("I").italics()).on_hover_text("Italic");
     a11y::label(&italic, WidgetType::Button, "Italic");
     if italic.clicked() {
+        promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.italic"));
+    }
+    let underline =
+        widgets::rich_button(ui, RichText::new("U").underline()).on_hover_text("Underline");
+    a11y::label(&underline, WidgetType::Button, "Underline");
+    if underline.clicked() {
+        promote_untitled_to_markdown(shell);
+        actions::run(shell, ctx, CommandId("cmd.md.underline"));
     }
     let strike =
         widgets::rich_button(ui, RichText::new("S").strikethrough()).on_hover_text("Strikethrough");
     a11y::label(&strike, WidgetType::Button, "Strikethrough");
     if strike.clicked() {
+        promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.strike"));
     }
+    let highlight = icons::button(ui, "Highlight", "highlight", palette).on_hover_text("Highlight");
+    a11y::label(&highlight, WidgetType::Button, "Highlight");
+    if highlight.clicked() {
+        promote_untitled_to_markdown(shell);
+        actions::run(shell, ctx, CommandId("cmd.md.highlight"));
+    }
+    text_color_menu(shell, ui, ctx, palette);
+}
+
+/// Group 1: Lists & block formatting (`Lists▾`, `Task list`, `Blockquote`, `Code`, `Horizontal rule`).
+fn group_blocks(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palette) {
+    list_menu(shell, ui, ctx, palette);
+    let checklist = icons::button(ui, "Task list", "checklist", palette).on_hover_text("Task list");
+    a11y::label(&checklist, WidgetType::Button, "Task list");
+    if checklist.clicked() {
+        promote_untitled_to_markdown(shell);
+        actions::run(shell, ctx, CommandId("cmd.md.checklist"));
+    }
+    let quote = icons::button(ui, "Blockquote", "quote", palette).on_hover_text("Blockquote");
+    a11y::label(&quote, WidgetType::Button, "Blockquote");
+    if quote.clicked() {
+        promote_untitled_to_markdown(shell);
+        actions::run(shell, ctx, CommandId("cmd.md.quote"));
+    }
+    let code = icons::button(ui, "Code", "code", palette).on_hover_text("Code");
+    a11y::label(&code, WidgetType::Button, "Code");
+    if code.clicked() {
+        promote_untitled_to_markdown(shell);
+        actions::run(shell, ctx, CommandId("cmd.md.code"));
+    }
+    let hr = icons::button(ui, "Horizontal rule", "hr", palette).on_hover_text("Horizontal rule");
+    a11y::label(&hr, WidgetType::Button, "Horizontal rule");
+    if hr.clicked() {
+        promote_untitled_to_markdown(shell);
+        actions::run(shell, ctx, CommandId("cmd.md.hr"));
+    }
+}
+
+/// Group 2: Insertions & Clear formatting (`Link`, `Image`, `Table`, `Aa`).
+fn group_insert(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palette) {
     let link = icons::button(ui, "Insert a link", "link", palette).on_hover_text("Insert a link");
     a11y::label(&link, WidgetType::Button, "Insert a link");
     if link.clicked() {
+        promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.link"));
+    }
+    let image =
+        icons::button(ui, "Insert an image", "image", palette).on_hover_text("Insert an image");
+    a11y::label(&image, WidgetType::Button, "Insert an image");
+    if image.clicked() {
+        promote_untitled_to_markdown(shell);
+        actions::run(shell, ctx, CommandId("cmd.md.image"));
     }
     let table =
         icons::button(ui, "Insert a table", "table", palette).on_hover_text("Insert a table");
     a11y::label(&table, WidgetType::Button, "Insert a table");
     if table.clicked() {
+        promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.table"));
     }
     let clear = widgets::rich_button(ui, RichText::new("Aa")).on_hover_text("Clear all formatting");
     a11y::label(&clear, WidgetType::Button, "Clear all formatting");
     if clear.clicked() {
+        promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.clear"));
     }
+}
+
+/// Compact display label for a font family when horizontal bar space is tight.
+fn compact_font_label(family: &'static str) -> &'static str {
+    match family {
+        "JetBrains Mono" => "JetBrains",
+        "IBM Plex Mono" => "IBM Plex",
+        "Atkinson Hyperlegible Mono" => "Atkinson",
+        "Fira Mono" => "Fira",
+        other => other,
+    }
+}
+
+/// Group 3: Font family dropdown + Font size stepper (`- 14px +`).
+fn group_typography(
+    shell: &mut Shell,
+    ui: &mut egui::Ui,
+    ctx: &Context,
+    palette: Palette,
+    compact: bool,
+) {
+    let display_family = if compact {
+        compact_font_label(shell.font_family)
+    } else {
+        shell.font_family
+    };
+    let font_menu = ui
+        .menu_button(
+            (
+                RichText::new(display_family).size(11.0),
+                icons::glyph("chevron-down", palette.text_dim),
+            ),
+            |ui| {
+                for family in FAMILIES {
+                    if ui
+                        .selectable_label(shell.font_family == family, family)
+                        .clicked()
+                    {
+                        shell.font_family = family;
+                        ui.close();
+                    }
+                }
+            },
+        )
+        .response
+        .on_hover_text(format!("Font family ({})", shell.font_family));
+    a11y::label(&font_menu, WidgetType::ComboBox, "Font family");
+
+    let decrease = ui
+        .add(egui::Button::new(RichText::new("-").size(12.0)).min_size(egui::vec2(18.0, 22.0)))
+        .on_hover_text("Decrease font size");
+    a11y::label(&decrease, WidgetType::Button, "Decrease font size");
+    if decrease.clicked() {
+        actions::run(shell, ctx, CommandId("cmd.view.zoom_out"));
+    }
+    let px = (14.0 * (shell.zoom as f32 / 100.0)).round() as u32;
+    ui.label(
+        RichText::new(format!("{px}px"))
+            .monospace()
+            .size(11.0)
+            .color(palette.text),
+    );
+    let increase = ui
+        .add(egui::Button::new(RichText::new("+").size(12.0)).min_size(egui::vec2(18.0, 22.0)))
+        .on_hover_text("Increase font size");
+    a11y::label(&increase, WidgetType::Button, "Increase font size");
+    if increase.clicked() {
+        actions::run(shell, ctx, CommandId("cmd.view.zoom_in"));
+    }
+}
+
+/// Group 4: Segmented Markdown view selector (`Raw | Split | Preview`).
+fn group_view_mode(
+    shell: &mut Shell,
+    ui: &mut egui::Ui,
+    ctx: &Context,
+    palette: Palette,
+    compact: bool,
+) {
+    let current_mode = shell
+        .active_tab()
+        .filter(|tab| tab.kind == DocKind::Markdown)
+        .map(|tab| tab.view_mode())
+        .unwrap_or(MarkdownViewMode::Raw);
+    let min_w = if compact { 30.0 } else { 34.0 };
+    for (mode, text, a11y_name, cmd_id) in [
+        (
+            MarkdownViewMode::Raw,
+            "Raw",
+            "Raw view",
+            "cmd.view.md_source",
+        ),
+        (
+            MarkdownViewMode::Split,
+            "Split",
+            "Split view",
+            "cmd.view.md_split",
+        ),
+        (
+            MarkdownViewMode::Preview,
+            "Preview",
+            "Preview",
+            "cmd.view.md_formatted",
+        ),
+    ] {
+        let active = current_mode == mode;
+        let label = RichText::new(text).size(11.0).color(if active {
+            palette.text
+        } else {
+            palette.text_dim
+        });
+        let mut button = egui::Button::new(if active { label.strong() } else { label })
+            .min_size(egui::vec2(min_w, 22.0));
+        if active {
+            button = button.fill(palette.bg);
+        }
+        let resp = ui.add(button).on_hover_text(a11y_name);
+        a11y::label(&resp, WidgetType::Button, a11y_name);
+        if resp.clicked() {
+            if mode != MarkdownViewMode::Raw {
+                if let Some(tab) = shell.active_tab_mut() {
+                    tab.kind = DocKind::Markdown;
+                }
+            }
+            actions::run(shell, ctx, CommandId(cmd_id));
+        }
+    }
+}
+
+/// The `Text color` toolbar dropdown: shows the `A` text-color icon with an active
+/// colour bar indicator underneath, and opens a colour palette menu.
+fn text_color_menu(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palette) {
+    let swatch_color = match shell.text_color {
+        TextColor::Default | TextColor::Pine => palette.accent,
+        other => other
+            .rgb()
+            .map(|[r, g, b]| Color32::from_rgb(r, g, b))
+            .unwrap_or(palette.accent),
+    };
+    let menu = ui.menu_button(icons::glyph("text-color", palette.text), |ui| {
+        ui.set_min_width(155.0);
+        for choice in TextColor::ALL {
+            let dot_color = choice
+                .rgb()
+                .map(|[r, g, b]| Color32::from_rgb(r, g, b))
+                .unwrap_or(palette.text);
+            let is_selected = shell.text_color == choice;
+            let row = ui.add(
+                egui::Button::new((
+                    RichText::new("●").size(13.0).color(dot_color),
+                    RichText::new(choice.label()).size(12.0).color(palette.text),
+                ))
+                .selected(is_selected)
+                .min_size(egui::vec2(148.0, 24.0)),
+            );
+            if row.clicked() {
+                shell.text_color = choice;
+                if let Some(tab) = shell.active_tab_mut() {
+                    if !tab.file.has_path() {
+                        tab.kind = DocKind::Markdown;
+                    }
+                }
+                actions::run(shell, ctx, CommandId("cmd.md.text_color"));
+                ui.close();
+            }
+        }
+    });
+    let btn_rect = menu.response.rect;
+    let bar_rect = egui::Rect::from_center_size(
+        egui::pos2(btn_rect.center().x, btn_rect.bottom() - 4.0),
+        egui::vec2(14.0, 3.0),
+    );
+    ui.painter()
+        .rect_filled(bar_rect, egui::CornerRadius::same(1), swatch_color);
+    let response = menu
+        .response
+        .on_hover_text(format!("Text color ({})", shell.text_color.label()));
+    a11y::label(&response, WidgetType::ComboBox, "Text color");
 }
 
 /// The `H1` paragraph-style dropdown.
@@ -585,6 +1029,7 @@ fn paragraph_menu(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: 
                     .selectable_label(style == current, style.label())
                     .clicked()
                 {
+                    promote_untitled_to_markdown(shell);
                     actions::run(shell, ctx, style.command());
                     ui.close();
                 }
@@ -623,11 +1068,13 @@ fn list_menu(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palet
                 let Some(spec) = by_id(id) else {
                     continue;
                 };
-                let enabled = spec.is_available(context);
+                let can_promote = shell.active_tab().is_some_and(|t| !t.file.has_path());
+                let enabled = spec.is_available(context) || can_promote;
                 if ui
                     .add_enabled(enabled, egui::Button::new(spec.label))
                     .clicked()
                 {
+                    promote_untitled_to_markdown(shell);
                     actions::run(shell, ctx, spec.id);
                     ui.close();
                 }
@@ -638,56 +1085,152 @@ fn list_menu(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palet
 }
 
 /// The sparkle / feedback / account / settings controls on the right.
-fn right_toolbar(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palette) {
+fn right_toolbar(
+    shell: &mut Shell,
+    ui: &mut egui::Ui,
+    ctx: &Context,
+    palette: Palette,
+    compact: bool,
+    icon_only_theme: bool,
+) {
+    let saved_gap = std::mem::replace(
+        &mut ui.spacing_mut().item_spacing.x,
+        if compact { 4.0 } else { 6.0 },
+    );
     let settings = widgets::icon_button(ui, "⚙").on_hover_text("Settings");
     a11y::label(&settings, WidgetType::Button, "Settings");
     if settings.clicked() {
         actions::run(shell, ctx, CommandId("cmd.app.settings"));
     }
-    avatar(ui, palette);
+    let icon_only_mode = ui.max_rect().width() < 860.0;
+    editor_mode_button(shell, ui, ctx, palette, icon_only_mode);
     let feedback =
         icons::button(ui, "Send feedback", "chat", palette).on_hover_text("Send feedback");
     a11y::label(&feedback, WidgetType::Button, "Send feedback");
 
+    // Quick Light / Dark theme toggle button (`gui2`: ☀️ Light / 🌙 Dark)
+    let is_dark = palette == Palette::DARK;
+    let (theme_icon, theme_label) = if is_dark {
+        ("moon", "Dark")
+    } else {
+        ("sun", "Light")
+    };
+    let theme_btn = if icon_only_theme {
+        icons::button(ui, "Toggle theme", theme_icon, palette).on_hover_text("Toggle theme")
+    } else {
+        ui.add(
+            egui::Button::new((
+                icons::glyph(theme_icon, palette.text),
+                RichText::new(theme_label).size(11.5).color(palette.text),
+            ))
+            .min_size(egui::vec2(52.0, 26.0)),
+        )
+        .on_hover_text("Toggle theme")
+    };
+    a11y::label(&theme_btn, WidgetType::Button, "Toggle theme");
+    if theme_btn.clicked() {
+        shell.theme = if is_dark {
+            AppTheme::Light
+        } else {
+            AppTheme::Dark
+        };
+        shell.palette = Palette::for_choice(shell.theme, None);
+    }
+
     // The AI ("sparkle") menu. Its entries are service-gated, so they show
     // greyed until the service is configured.
     let context = shell.availability();
-    let ai = ui.menu_button(
-        (
-            icons::glyph("sparkle", palette.text),
-            icons::glyph("chevron-down", palette.text_dim),
-        ),
-        |ui| {
-            for id in ["cmd.ai.rewrite", "cmd.ai.summarize", "cmd.ai.write"] {
-                if let Some(spec) = by_id(id) {
-                    let enabled = spec.is_available(context);
-                    if ui
-                        .add_enabled(enabled, egui::Button::new(spec.label))
-                        .clicked()
-                    {
-                        ui.close();
+    let ai = ui.scope(|ui| {
+        let widgets = &mut ui.style_mut().visuals.widgets;
+        for widget in [
+            &mut widgets.inactive,
+            &mut widgets.hovered,
+            &mut widgets.active,
+            &mut widgets.open,
+        ] {
+            widget.weak_bg_fill = palette.accent;
+            widget.bg_fill = palette.accent;
+        }
+        ui.menu_button(
+            (
+                icons::glyph("sparkle", Color32::WHITE),
+                RichText::new("AI")
+                    .size(11.5)
+                    .strong()
+                    .color(Color32::WHITE),
+                icons::glyph("chevron-down", Color32::WHITE),
+            ),
+            |ui| {
+                for id in ["cmd.ai.rewrite", "cmd.ai.summarize", "cmd.ai.write"] {
+                    if let Some(spec) = by_id(id) {
+                        let enabled = spec.is_available(context);
+                        if ui
+                            .add_enabled(enabled, egui::Button::new(spec.label))
+                            .clicked()
+                        {
+                            ui.close();
+                        }
                     }
                 }
-            }
-        },
-    );
-    a11y::label(&ai.response, WidgetType::ComboBox, "AI");
+            },
+        )
+    });
+    a11y::label(&ai.inner.response, WidgetType::ComboBox, "AI");
+    ui.spacing_mut().item_spacing.x = saved_gap;
 }
 
-/// The round account avatar.
-fn avatar(ui: &mut egui::Ui, palette: Palette) {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(26.0, 26.0), egui::Sense::click());
-    a11y::label(&response, WidgetType::Button, "Account");
-    ui.painter()
-        .circle_filled(rect.center(), 13.0, palette.border);
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        "👤",
-        egui::FontId::proportional(13.0),
-        palette.text,
-    );
-    let _ = response.on_hover_text("Account");
+/// The editor-mode toggle button (replacing the account avatar): switches the application
+/// between Rich Text Editor mode (`EditorMode::Text`) and Full Code Editor mode (`EditorMode::Code`).
+fn editor_mode_button(
+    shell: &mut Shell,
+    ui: &mut egui::Ui,
+    ctx: &Context,
+    palette: Palette,
+    icon_only: bool,
+) {
+    let mode = shell.editor_mode;
+    let is_code = mode == EditorMode::Code;
+    let fg = if is_code {
+        Color32::WHITE
+    } else {
+        palette.text
+    };
+    let hover_tip = match mode {
+        EditorMode::Text => "Editor mode: Text Editor (click to switch to Code Editor)",
+        EditorMode::Code => "Editor mode: Code Editor (click to switch to Text Editor)",
+    };
+
+    let response = if icon_only {
+        let mut btn =
+            egui::Button::new(icons::glyph(mode.icon(), fg)).min_size(egui::vec2(28.0, 26.0));
+        if is_code {
+            btn = btn.fill(palette.accent);
+        } else {
+            btn = btn.stroke(egui::Stroke::new(1.0, palette.border));
+        }
+        ui.add(btn).on_hover_text(hover_tip)
+    } else {
+        let mut btn = egui::Button::new((
+            icons::glyph(mode.icon(), fg),
+            RichText::new(mode.short_label())
+                .size(11.5)
+                .strong()
+                .color(fg),
+        ))
+        .min_size(egui::vec2(56.0, 26.0));
+        if is_code {
+            btn = btn.fill(palette.accent);
+        } else {
+            btn = btn
+                .fill(palette.bg)
+                .stroke(egui::Stroke::new(1.0, palette.border));
+        }
+        ui.add(btn).on_hover_text(hover_tip)
+    };
+    a11y::label(&response, WidgetType::Button, "Editor mode");
+    if response.clicked() {
+        actions::run(shell, ctx, CommandId("cmd.view.toggle_editor_mode"));
+    }
 }
 
 #[cfg(test)]

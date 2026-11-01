@@ -219,7 +219,7 @@ mod tests {
         // chose — and after M8, it would throw away the ones they set days ago.
         let mut windows = Windows::new();
         let mut main = Shell::new();
-        main.theme = AppTheme::Light;
+        main.theme = AppTheme::Dark;
         main.zoom = 130;
         main.word_wrap = false;
         main.opening = OpenBehavior::NewWindow;
@@ -230,8 +230,8 @@ mod tests {
         let shell = &windows.open[0].shell;
         assert_eq!(
             shell.theme,
-            AppTheme::Light,
-            "the window opened light, as asked"
+            AppTheme::Dark,
+            "the window opened dark, as asked"
         );
         assert_eq!(shell.zoom, 130);
         assert!(!shell.word_wrap);

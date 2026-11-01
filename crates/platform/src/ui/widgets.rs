@@ -42,7 +42,7 @@ pub fn icon_button(ui: &mut egui::Ui, glyph: &str) -> egui::Response {
     ui.add(button)
 }
 
-/// A toolbar button with a styled text label (used for `B`, `I`, `S`, `Aa`).
+/// A toolbar button with a styled text label (used for `B`, `I`, `U`, `S`, `Aa`).
 pub fn rich_button(ui: &mut egui::Ui, text: egui::RichText) -> egui::Response {
-    ui.add(egui::Button::new(text).min_size(egui::vec2(30.0, 26.0)))
+    ui.add(egui::Button::new(text).min_size(egui::vec2(26.0, 26.0)))
 }

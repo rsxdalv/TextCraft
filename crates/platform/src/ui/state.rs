@@ -20,6 +20,135 @@ pub enum DocKind {
     Markdown,
 }
 
+/// Which editing mode the application is operating in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorMode {
+    /// WYSIWYG Rich Text Editor mode: edits formatted text directly without exposing raw markup tags.
+    Text,
+    /// Full Code Editor mode: edits raw source code with line numbers, active-line highlight, and syntax highlighting.
+    Code,
+}
+
+impl EditorMode {
+    /// Human-readable label shown in the status bar and tooltip.
+    pub const fn label(self) -> &'static str {
+        match self {
+            EditorMode::Text => "Text Editor",
+            EditorMode::Code => "Code Editor",
+        }
+    }
+
+    /// Short pill label shown on the top-bar toggle button.
+    pub const fn short_label(self) -> &'static str {
+        match self {
+            EditorMode::Text => "Text",
+            EditorMode::Code => "Code",
+        }
+    }
+
+    /// Icon name used on the top-bar toggle button.
+    pub const fn icon(self) -> &'static str {
+        match self {
+            EditorMode::Text => "file-text",
+            EditorMode::Code => "code",
+        }
+    }
+}
+
+/// How a Markdown document is displayed in the editor area (`gui2`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarkdownViewMode {
+    /// Editable Markdown source (`Raw`).
+    Raw,
+    /// Live side-by-side source and rendered preview (`Split`).
+    Split,
+    /// Full read-only rendered Markdown (`Preview`).
+    Preview,
+}
+
+/// A colour choice in the formatting toolbar's text-colour palette.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextColor {
+    /// Default theme text colour (strips any inline colour span).
+    Default,
+    /// Pine Green (`#2D6A4F`).
+    Pine,
+    /// Crimson Red (`#C92A2A`).
+    Crimson,
+    /// Ocean Blue (`#1971C2`).
+    Ocean,
+    /// Amber Gold (`#D97706`).
+    Amber,
+    /// Royal Purple (`#7048E8`).
+    Purple,
+    /// Teal Cyan (`#0C8599`).
+    Teal,
+    /// Warm Coral (`#E8590C`).
+    Coral,
+    /// Muted Slate (`#64748B`).
+    Slate,
+}
+
+impl TextColor {
+    /// Every colour option offered in the toolbar palette.
+    pub const ALL: [TextColor; 9] = [
+        TextColor::Default,
+        TextColor::Pine,
+        TextColor::Crimson,
+        TextColor::Ocean,
+        TextColor::Amber,
+        TextColor::Purple,
+        TextColor::Teal,
+        TextColor::Coral,
+        TextColor::Slate,
+    ];
+
+    /// The human-readable name shown in the colour picker menu.
+    pub const fn label(self) -> &'static str {
+        match self {
+            TextColor::Default => "Default (Reset)",
+            TextColor::Pine => "Pine Green",
+            TextColor::Crimson => "Crimson Red",
+            TextColor::Ocean => "Ocean Blue",
+            TextColor::Amber => "Amber Gold",
+            TextColor::Purple => "Royal Purple",
+            TextColor::Teal => "Teal Cyan",
+            TextColor::Coral => "Warm Coral",
+            TextColor::Slate => "Muted Slate",
+        }
+    }
+
+    /// The `#RRGGBB` hex string written into `<span style="color: #HEX">`, or `None` for `Default`.
+    pub const fn hex(self) -> Option<&'static str> {
+        match self {
+            TextColor::Default => None,
+            TextColor::Pine => Some("#2D6A4F"),
+            TextColor::Crimson => Some("#C92A2A"),
+            TextColor::Ocean => Some("#1971C2"),
+            TextColor::Amber => Some("#D97706"),
+            TextColor::Purple => Some("#7048E8"),
+            TextColor::Teal => Some("#0C8599"),
+            TextColor::Coral => Some("#E8590C"),
+            TextColor::Slate => Some("#64748B"),
+        }
+    }
+
+    /// The RGB components of this colour, or `None` for `Default`.
+    pub const fn rgb(self) -> Option<[u8; 3]> {
+        match self {
+            TextColor::Default => None,
+            TextColor::Pine => Some([0x2D, 0x6A, 0x4F]),
+            TextColor::Crimson => Some([0xC9, 0x2A, 0x2A]),
+            TextColor::Ocean => Some([0x19, 0x71, 0xC2]),
+            TextColor::Amber => Some([0xD9, 0x77, 0x06]),
+            TextColor::Purple => Some([0x70, 0x48, 0xE8]),
+            TextColor::Teal => Some([0x0C, 0x85, 0x99]),
+            TextColor::Coral => Some([0xE8, 0x59, 0x0C]),
+            TextColor::Slate => Some([0x64, 0x74, 0x8B]),
+        }
+    }
+}
+
 /// The paragraph style selected in the formatting toolbar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParagraphStyle {
@@ -589,6 +718,8 @@ pub struct Tab {
     /// ways at once. Only a Markdown tab can be in it: the rendered view is derived
     /// from Markdown syntax, and a plain document has none to derive it from.
     pub formatted: bool,
+    /// Whether this document is shown in the side-by-side `Split` view (`gui2`).
+    pub split: bool,
     /// The byte ranges of likely misspellings in the current text, refreshed by
     /// [`Tab::refresh_spellings`] and drawn as a squiggle while Spell check is on
     /// (`NC-P004`).
@@ -606,6 +737,7 @@ impl Tab {
             kind: DocKind::Plain,
             paragraph: ParagraphStyle::Body,
             formatted: false,
+            split: false,
             spellings: Vec::new(),
             spellings_source: 0,
         }
@@ -622,6 +754,7 @@ impl Tab {
             kind: DocKind::Markdown,
             paragraph: ParagraphStyle::Body,
             formatted: false,
+            split: false,
             spellings: Vec::new(),
             spellings_source: 0,
         }
@@ -640,6 +773,7 @@ impl Tab {
             },
             paragraph: ParagraphStyle::Body,
             formatted: false,
+            split: false,
             spellings: Vec::new(),
             spellings_source: 0,
         })
@@ -663,6 +797,7 @@ impl Tab {
             },
             paragraph: ParagraphStyle::Body,
             formatted: false,
+            split: false,
             spellings: Vec::new(),
             spellings_source: 0,
         })
@@ -677,8 +812,38 @@ impl Tab {
             kind,
             paragraph: ParagraphStyle::Body,
             formatted: false,
+            split: false,
             spellings: Vec::new(),
             spellings_source: 0,
+        }
+    }
+
+    /// The current Markdown view mode (`Raw`, `Split`, or `Preview`).
+    pub const fn view_mode(&self) -> MarkdownViewMode {
+        if self.formatted {
+            MarkdownViewMode::Preview
+        } else if self.split {
+            MarkdownViewMode::Split
+        } else {
+            MarkdownViewMode::Raw
+        }
+    }
+
+    /// Sets the Markdown view mode (`Raw`, `Split`, or `Preview`).
+    pub fn set_view_mode(&mut self, mode: MarkdownViewMode) {
+        match mode {
+            MarkdownViewMode::Raw => {
+                self.formatted = false;
+                self.split = false;
+            }
+            MarkdownViewMode::Split => {
+                self.formatted = false;
+                self.split = true;
+            }
+            MarkdownViewMode::Preview => {
+                self.formatted = true;
+                self.split = false;
+            }
         }
     }
 
@@ -689,6 +854,18 @@ impl Tab {
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| self.untitled_title())
+    }
+
+    /// The file name shown in the workspace sidebar (`notes.txt`, or `Untitled.md` / `Untitled.txt`).
+    pub fn workspace_name(&self) -> String {
+        self.file
+            .path()
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| match self.kind {
+                DocKind::Markdown => "Untitled.md".to_owned(),
+                DocKind::Plain => "Untitled.txt".to_owned(),
+            })
     }
 
     /// What an untitled tab is called: the first line of its text that has anything on
@@ -704,19 +881,24 @@ impl Tab {
         else {
             return "Untitled".to_owned();
         };
+        let stripped = strip_inline_title_tags(line);
         // A Markdown document's tab names what the line says, not how it is marked up.
         let line = if self.kind == DocKind::Markdown {
-            let unmarked = line
+            let unmarked = stripped
                 .trim_start_matches(['#', '>'])
                 .trim_start_matches(['-', '*', '+'])
-                .replace(['*', '`'], "");
+                .replace(['*', '`', '~', '='], "");
             let unmarked = unmarked.trim().to_owned();
             if unmarked.is_empty() {
                 return "Untitled".to_owned();
             }
             unmarked
         } else {
-            line.to_owned()
+            let trimmed = stripped.trim().to_owned();
+            if trimmed.is_empty() {
+                return "Untitled".to_owned();
+            }
+            trimmed
         };
         if line.chars().count() <= LIMIT {
             line
@@ -832,6 +1014,25 @@ pub enum SaveThen {
     Replace,
 }
 
+/// Strips inline `<span style="color: ...">`, `</span>`, `<u>`, and `</u>` tags so an
+/// untitled tab's title shows its visible words rather than raw HTML tags.
+fn strip_inline_title_tags(line: &str) -> String {
+    let mut out = line
+        .replace("</span>", "")
+        .replace("<u>", "")
+        .replace("</u>", "");
+    const PREFIX: &str = "<span style=\"color: ";
+    while let Some(start) = out.find(PREFIX) {
+        let after = start + PREFIX.len();
+        if let Some(rel_end) = out[after..].find("\">") {
+            out.replace_range(start..after + rel_end + 2, "");
+        } else {
+            break;
+        }
+    }
+    out
+}
+
 /// A document waiting to take a tab's place once that tab's unsaved changes have
 /// been answered for (`Settings ▸ Opening files`, *Replace the current tab*).
 pub struct PendingReplace {
@@ -855,6 +1056,8 @@ pub struct Shell {
     pub show_settings: bool,
     /// Whether the status bar is visible (`View ▸ Status bar`).
     pub status_bar_visible: bool,
+    /// Whether the workspace sidebar is visible (`View ▸ Workspace sidebar`).
+    pub sidebar_visible: bool,
     /// Whether word wrap is on (`View ▸ Word wrap`).
     pub word_wrap: bool,
     /// Whether text formatting is offered at all (`Settings ▸ Formatting`). Off, the
@@ -877,6 +1080,10 @@ pub struct Shell {
     /// The document font family, one of the names in [`crate::ui::fonts`] — each of
     /// which this build ships a face for.
     pub font_family: &'static str,
+    /// The active colour selected in the formatting toolbar's text-colour picker.
+    pub text_color: TextColor,
+    /// Whether the shell is in Rich Text Editor mode or Full Code Editor mode.
+    pub editor_mode: EditorMode,
     /// Where opened files go.
     pub opening: OpenBehavior,
     /// Whether likely misspellings are underlined and can be corrected
@@ -953,12 +1160,15 @@ impl Shell {
             recent_files: Vec::new(),
             show_settings: false,
             status_bar_visible: true,
+            sidebar_visible: true,
             word_wrap: true,
             formatting: true,
             zoom: 100,
-            theme: AppTheme::Dark,
-            palette: Palette::DARK,
+            theme: AppTheme::Light,
+            palette: Palette::LIGHT,
             font_family: crate::ui::fonts::DEFAULT,
+            text_color: TextColor::Crimson,
+            editor_mode: EditorMode::Text,
             opening: OpenBehavior::NewTab,
             spell_check: false,
             spelling: SpellDialog::new(),
@@ -1005,6 +1215,12 @@ impl Shell {
             .is_some_and(|tab| tab.kind == DocKind::Markdown && tab.formatted)
     }
 
+    /// Whether the active Markdown document is shown in side-by-side `Split` view.
+    pub fn split_view(&self) -> bool {
+        self.active_tab()
+            .is_some_and(|tab| tab.kind == DocKind::Markdown && tab.split && !tab.formatted)
+    }
+
     /// The availability context derived from the current state.
     pub fn availability(&self) -> AvailabilityContext {
         let tab = self.active_tab();
@@ -1020,6 +1236,7 @@ impl Shell {
             service_available: self.ai_enabled,
             tab_count: self.tabs.len(),
             status_bar_visible: self.status_bar_visible,
+            sidebar_visible: self.sidebar_visible,
             word_wrap: self.word_wrap,
             formatted_view: self.formatted_view(),
         }
@@ -1112,6 +1329,13 @@ impl Shell {
     pub fn char_count(&self) -> usize {
         self.active_tab()
             .map(|tab| tab.text().chars().count())
+            .unwrap_or(0)
+    }
+
+    /// The number of whitespace-separated words in the active document (`gui2` status bar).
+    pub fn word_count(&self) -> usize {
+        self.active_tab()
+            .map(|tab| tab.text().split_whitespace().count())
             .unwrap_or(0)
     }
 }

@@ -36,8 +36,8 @@ const DRAG_GAP: f32 = 48.0;
 
 /// The height of a tab; its bottom edge is the bottom edge of the bar.
 const TAB_HEIGHT: f32 = 30.0;
-/// The app icon's edge.
-const ICON_SIZE: f32 = 16.0;
+/// The app icon's edge (`w-6 h-6` = 24pt in `gui2`).
+const ICON_SIZE: f32 = 24.0;
 /// The narrowest a tab is squeezed to before the strip starts scrolling.
 const MIN_TAB_WIDTH: f32 = 84.0;
 /// The width of every tab while the strip scrolls.
@@ -119,6 +119,12 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context) {
             let mut chosen: Option<CommandId> = None;
             let tab_menu = build_tab_context_menu(shell.availability());
             let palette = shell.palette;
+
+            ui.painter().hline(
+                bar.x_range(),
+                bar.bottom() - 0.5,
+                Stroke::new(1.0, palette.line),
+            );
 
             // Everything but the caption buttons sits on the bottom edge.
             let band_top = bar.bottom() - TAB_HEIGHT;
@@ -533,7 +539,9 @@ fn tab_widget(
 
     let painter = ui.painter();
     let fill = if active {
-        palette.chrome
+        palette.bg
+    } else if response.hovered() {
+        palette.row_hover
     } else {
         palette.title
     };
@@ -547,6 +555,30 @@ fn tab_widget(
         },
         fill,
     );
+    if active {
+        let border_stroke = Stroke::new(1.0, palette.border);
+        painter.line_segment(
+            [
+                pos2(rect.left(), rect.bottom()),
+                pos2(rect.left(), rect.top() + 4.0),
+            ],
+            border_stroke,
+        );
+        painter.line_segment(
+            [
+                pos2(rect.left() + 4.0, rect.top() + 0.5),
+                pos2(rect.right() - 4.0, rect.top() + 0.5),
+            ],
+            border_stroke,
+        );
+        painter.line_segment(
+            [
+                pos2(rect.right(), rect.top() + 4.0),
+                pos2(rect.right(), rect.bottom()),
+            ],
+            border_stroke,
+        );
+    }
 
     let text_color = if active {
         palette.text
@@ -561,12 +593,12 @@ fn tab_widget(
         text_color,
     );
 
-    // An unsaved change shows as a dot where the close button sits, the way a
-    // tab strip usually reports it (`docs/ui-reference.md` §1).
+    // An unsaved change shows as an accent dot where the close button sits
+    // (`docs/ui-reference.md` §1).
     // The dot gives way to the close glyph while the pointer is on the button, so the
     // two never overlap and a dirty tab can still be closed by what it looks like.
     if tab.is_dirty() && !close.hovered() {
-        painter.circle_filled(close_rect.center(), 3.0, palette.text_dim);
+        painter.circle_filled(close_rect.center(), 3.0, palette.accent);
     }
 
     if (active || response.hovered()) && (!tab.is_dirty() || close.hovered()) {
