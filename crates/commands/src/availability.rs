@@ -42,6 +42,8 @@ pub struct AvailabilityContext {
     pub tab_count: usize,
     /// Whether the status bar is currently shown (the `View ▸ Status bar` check).
     pub status_bar_visible: bool,
+    /// Whether the workspace sidebar is currently shown (`View ▸ Workspace sidebar`).
+    pub sidebar_visible: bool,
     /// Whether word wrap is currently on (the `View ▸ Word wrap` check).
     pub word_wrap: bool,
     /// Whether a Markdown document is shown formatted rather than as source.
@@ -59,6 +61,7 @@ impl AvailabilityContext {
             service_available: false,
             tab_count: 1,
             status_bar_visible: true,
+            sidebar_visible: true,
             word_wrap: true,
             formatted_view: false,
         }

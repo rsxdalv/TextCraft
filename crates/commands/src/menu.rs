@@ -19,11 +19,21 @@ pub enum TopMenu {
     Edit,
     /// The `View` menu.
     View,
+    /// The `Insert` menu.
+    Insert,
+    /// The `Format` menu.
+    Format,
 }
 
 impl TopMenu {
     /// Every top-level menu, in display order.
-    pub const ALL: [TopMenu; 3] = [TopMenu::File, TopMenu::Edit, TopMenu::View];
+    pub const ALL: [TopMenu; 5] = [
+        TopMenu::File,
+        TopMenu::Edit,
+        TopMenu::View,
+        TopMenu::Insert,
+        TopMenu::Format,
+    ];
 
     /// The label shown in the menu bar.
     pub const fn label(self) -> &'static str {
@@ -31,6 +41,8 @@ impl TopMenu {
             TopMenu::File => "File",
             TopMenu::Edit => "Edit",
             TopMenu::View => "View",
+            TopMenu::Insert => "Insert",
+            TopMenu::Format => "Format",
         }
     }
 }
@@ -173,6 +185,7 @@ fn resolve_node(node: &MenuNode, context: AvailabilityContext) -> Option<MenuIte
 pub fn checked(toggle: Toggle, context: AvailabilityContext) -> bool {
     match toggle {
         Toggle::StatusBar => context.status_bar_visible,
+        Toggle::Sidebar => context.sidebar_visible,
         Toggle::WordWrap => context.word_wrap,
         Toggle::FormattedView => context.formatted_view,
         Toggle::SourceView => !context.formatted_view,
@@ -229,7 +242,7 @@ mod tests {
     fn menu_bar_has_the_three_menus_in_order() {
         let bar = build_menu_bar(AvailabilityContext::initial());
         let titles: Vec<_> = bar.iter().map(|menu| menu.menu.label()).collect();
-        assert_eq!(titles, vec!["File", "Edit", "View"]);
+        assert_eq!(titles, vec!["File", "Edit", "View", "Insert", "Format"]);
     }
 
     #[test]

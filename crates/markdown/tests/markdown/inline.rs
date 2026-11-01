@@ -108,3 +108,55 @@ fn a_selection_at_the_very_start_and_end_of_the_text_works() {
     assert_eq!(edited.text, "**whole**");
     assert_eq!(edited.selection, Range::new(0, text.len() + 4).unwrap());
 }
+
+#[test]
+fn underline_and_highlight_wrap_and_unwrap_reversibly() {
+    let text = "mark this word";
+    let once_u = toggle_inline(text, selection_of(text, "this"), Inline::Underline).unwrap();
+    assert_eq!(once_u.text, "mark <u>this</u> word");
+    let twice_u = toggle_inline(&once_u.text, once_u.selection, Inline::Underline).unwrap();
+    assert_eq!(twice_u.text, text);
+
+    let once_h = toggle_inline(text, selection_of(text, "this"), Inline::Highlight).unwrap();
+    assert_eq!(once_h.text, "mark ==this== word");
+    let twice_h = toggle_inline(&once_h.text, once_h.selection, Inline::Highlight).unwrap();
+    assert_eq!(twice_h.text, text);
+}
+
+#[test]
+fn checklist_quote_code_hr_and_image_format_as_expected() {
+    use nc_markdown::{
+        insert_horizontal_rule, insert_image, toggle_checklist, toggle_code, toggle_quote,
+    };
+
+    let tasks = "first\nsecond";
+    let checked = toggle_checklist(tasks, Range::new(0, tasks.len()).unwrap()).unwrap();
+    assert_eq!(checked.text, "- [ ] first\n- [ ] second");
+    let unchecked = toggle_checklist(&checked.text, checked.selection).unwrap();
+    assert_eq!(unchecked.text, tasks);
+
+    let quoted = toggle_quote(tasks, Range::new(0, tasks.len()).unwrap()).unwrap();
+    assert_eq!(quoted.text, "> first\n> second");
+    let unquoted = toggle_quote(&quoted.text, quoted.selection).unwrap();
+    assert_eq!(unquoted.text, tasks);
+
+    let inline_code = toggle_code(
+        "run cargo test",
+        selection_of("run cargo test", "cargo test"),
+    )
+    .expect("inline code");
+    assert_eq!(inline_code.text, "run `cargo test`");
+
+    let block_code = toggle_code(
+        "fn main() {\n}",
+        Range::new(0, "fn main() {\n}".len()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(block_code.text, "```\nfn main() {\n}\n```");
+
+    let hr = insert_horizontal_rule("above", Range::caret(5)).unwrap();
+    assert_eq!(hr.text, "above\n---\n");
+
+    let img = insert_image("see diagram", selection_of("see diagram", "diagram"), "").unwrap();
+    assert_eq!(img.text, "see ![diagram]()");
+}

@@ -151,6 +151,8 @@ pub enum SpanKind {
     Image,
     /// A bare `<https://example.com>`.
     AutoLink,
+    /// `<span style="color: #RRGGBB">colored</span>`
+    Color([u8; 3]),
 }
 
 /// A span of inline markup, and the text inside its delimiters.
@@ -273,7 +275,7 @@ fn span_at(text: &str, at: usize, to: usize) -> Option<Span> {
         b'`' => code_span(text, at, to),
         b'!' => image(text, at, to),
         b'[' => link(text, at, at + 1, to, SpanKind::Link),
-        b'<' => auto_link(text, at, to),
+        b'<' => color_span(text, at, to).or_else(|| auto_link(text, at, to)),
         b'~' if bytes.get(at + 1) == Some(&b'~') => paired(text, at, to, "~~", SpanKind::Strike),
         b'*' if bytes.get(at + 1) == Some(&b'*') => paired(text, at, to, "**", SpanKind::Strong),
         b'*' => emphasised(text, at, to, b'*'),
@@ -397,6 +399,45 @@ fn auto_link(text: &str, from: usize, to: usize) -> Option<Span> {
         range: Range::new(from, end)?,
         content: Range::new(from + 1, from + 1 + close)?,
     })
+}
+
+/// A `<span style="color: #RRGGBB">…</span>` inline color span.
+fn color_span(text: &str, from: usize, to: usize) -> Option<Span> {
+    const PREFIX: &str = "<span style=\"color:";
+    const CLOSE: &str = "</span>";
+    let tail = text.get(from..to)?;
+    let after_prefix = tail.strip_prefix(PREFIX)?;
+    let quote_end = after_prefix.find("\">")?;
+    let hex = after_prefix.get(..quote_end)?.trim();
+    let rgb = parse_hex_color(hex)?;
+    let content_start = from + PREFIX.len() + quote_end + 2;
+    if content_start >= to {
+        return None;
+    }
+    let body = text.get(content_start..to)?;
+    let close_offset = body.find(CLOSE)?;
+    let content_end = content_start + close_offset;
+    if content_end == content_start {
+        return None;
+    }
+    let end = content_end + CLOSE.len();
+    Some(Span {
+        kind: SpanKind::Color(rgb),
+        range: Range::new(from, end)?,
+        content: Range::new(content_start, content_end)?,
+    })
+}
+
+/// Parses a `#RRGGBB` hex colour string into `[r, g, b]`.
+fn parse_hex_color(hex: &str) -> Option<[u8; 3]> {
+    let digits = hex.strip_prefix('#')?;
+    if digits.len() != 6 || !digits.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let r = u8::from_str_radix(&digits[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&digits[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&digits[4..6], 16).ok()?;
+    Some([r, g, b])
 }
 
 /// How many times `marker` repeats from `at`.
