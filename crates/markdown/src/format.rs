@@ -148,15 +148,15 @@ pub fn toggle_inline(text: &str, selection: Range, kind: Inline) -> Option<Outco
     }
 
     // Markers on the outside: the user selected the words they want unmarked.
-    if let Some((open_range, close_range)) = find_enclosing_inline(text, selection, open, close) {
+    if let Some((open_range, close_range)) = find_enclosing_inline(text, selection, kind) {
         let outer = [Patch::delete(open_range), Patch::delete(close_range)];
         return Some(apply(text, &outer, selection));
     }
 
     // Markers on the inside: the user selected the whole marked run.
     if selection.len() > open_width + close_width
-        && followed_by(text, selection.start, open)
-        && preceded_by(text, selection.end, close)
+        && open_marker_starts_at(text, selection.start, kind)
+        && close_marker_ends_at(text, selection.end, kind)
     {
         let inner = [
             Patch::delete(Range::new(selection.start, selection.start + open_width)?),
@@ -179,18 +179,16 @@ pub fn is_inline_active(text: &str, selection: Range, kind: Inline) -> bool {
     if !selection.is_within(text) {
         return false;
     }
-    let open = kind.marker();
-    let close = kind.close_marker();
-    let open_width = open.len();
-    let close_width = close.len();
+    let open_width = kind.marker().len();
+    let close_width = kind.close_marker().len();
 
-    if find_enclosing_inline(text, selection, open, close).is_some() {
+    if find_enclosing_inline(text, selection, kind).is_some() {
         return true;
     }
 
     if selection.len() >= open_width + close_width
-        && followed_by(text, selection.start, open)
-        && preceded_by(text, selection.end, close)
+        && open_marker_starts_at(text, selection.start, kind)
+        && close_marker_ends_at(text, selection.end, kind)
     {
         return true;
     }
@@ -198,21 +196,90 @@ pub fn is_inline_active(text: &str, selection: Range, kind: Inline) -> bool {
     false
 }
 
-/// Finds `(open_range, close_range)` of `open` and `close` sitting immediately outside
+fn count_consecutive(bytes: &[u8], ch: u8) -> usize {
+    bytes.iter().take_while(|&&b| b == ch).count()
+}
+
+fn count_consecutive_rev(bytes: &[u8], ch: u8) -> usize {
+    bytes.iter().rev().take_while(|&&b| b == ch).count()
+}
+
+/// Whether `kind`'s opening marker sits immediately before `pos`.
+fn open_marker_precedes(text: &str, pos: usize, kind: Inline) -> bool {
+    if pos > text.len() {
+        return false;
+    }
+    let bytes = text.as_bytes();
+    match kind {
+        Inline::Bold => count_consecutive_rev(&bytes[..pos], b'*') >= 2,
+        Inline::Italic => count_consecutive_rev(&bytes[..pos], b'*') % 2 == 1,
+        Inline::Code => count_consecutive_rev(&bytes[..pos], b'`') == 1,
+        Inline::Strike => preceded_by(text, pos, "~~"),
+        Inline::Underline => preceded_by(text, pos, "<u>"),
+        Inline::Highlight => preceded_by(text, pos, "=="),
+    }
+}
+
+/// Whether `kind`'s closing marker sits immediately after `pos`.
+fn close_marker_follows(text: &str, pos: usize, kind: Inline) -> bool {
+    if pos > text.len() {
+        return false;
+    }
+    let bytes = text.as_bytes();
+    match kind {
+        Inline::Bold => count_consecutive(&bytes[pos..], b'*') >= 2,
+        Inline::Italic => count_consecutive(&bytes[pos..], b'*') % 2 == 1,
+        Inline::Code => count_consecutive(&bytes[pos..], b'`') == 1,
+        Inline::Strike => followed_by(text, pos, "~~"),
+        Inline::Underline => followed_by(text, pos, "</u>"),
+        Inline::Highlight => followed_by(text, pos, "=="),
+    }
+}
+
+/// Whether `kind`'s opening marker starts at `pos` (inside a selection).
+fn open_marker_starts_at(text: &str, pos: usize, kind: Inline) -> bool {
+    if pos > text.len() {
+        return false;
+    }
+    let bytes = text.as_bytes();
+    match kind {
+        Inline::Bold => count_consecutive(&bytes[pos..], b'*') >= 2,
+        Inline::Italic => count_consecutive(&bytes[pos..], b'*') % 2 == 1,
+        Inline::Code => count_consecutive(&bytes[pos..], b'`') == 1,
+        Inline::Strike => followed_by(text, pos, "~~"),
+        Inline::Underline => followed_by(text, pos, "<u>"),
+        Inline::Highlight => followed_by(text, pos, "=="),
+    }
+}
+
+/// Whether `kind`'s closing marker ends at `pos` (inside a selection).
+fn close_marker_ends_at(text: &str, pos: usize, kind: Inline) -> bool {
+    if pos > text.len() {
+        return false;
+    }
+    let bytes = text.as_bytes();
+    match kind {
+        Inline::Bold => count_consecutive_rev(&bytes[..pos], b'*') >= 2,
+        Inline::Italic => count_consecutive_rev(&bytes[..pos], b'*') % 2 == 1,
+        Inline::Code => count_consecutive_rev(&bytes[..pos], b'`') == 1,
+        Inline::Strike => preceded_by(text, pos, "~~"),
+        Inline::Underline => preceded_by(text, pos, "</u>"),
+        Inline::Highlight => preceded_by(text, pos, "=="),
+    }
+}
+
+/// Finds `(open_range, close_range)` of `kind` sitting immediately outside
 /// `selection`, or outside any other inline markers that immediately wrap `selection`.
-fn find_enclosing_inline(
-    text: &str,
-    selection: Range,
-    open: &str,
-    close: &str,
-) -> Option<(Range, Range)> {
+fn find_enclosing_inline(text: &str, selection: Range, kind: Inline) -> Option<(Range, Range)> {
     let mut left = selection.start;
     let mut right = selection.end;
+    let open_width = kind.marker().len();
+    let close_width = kind.close_marker().len();
     for _ in 0..8 {
-        if preceded_by(text, left, open) && followed_by(text, right, close) {
+        if open_marker_precedes(text, left, kind) && close_marker_follows(text, right, kind) {
             return Some((
-                Range::new(left - open.len(), left)?,
-                Range::new(right, right + close.len())?,
+                Range::new(left - open_width, left)?,
+                Range::new(right, right + close_width)?,
             ));
         }
         if let Some((new_left, new_right)) = step_out_one_wrapper(text, left, right) {
@@ -233,16 +300,18 @@ fn step_out_one_wrapper(text: &str, left: usize, right: usize) -> Option<(usize,
             return Some((open_start, right + "</span>".len()));
         }
     }
-    for (o, c) in [
-        ("**", "**"),
-        ("~~", "~~"),
-        ("==", "=="),
-        ("<u>", "</u>"),
-        ("`", "`"),
-        ("*", "*"),
+    for kind in [
+        Inline::Bold,
+        Inline::Strike,
+        Inline::Highlight,
+        Inline::Underline,
+        Inline::Code,
+        Inline::Italic,
     ] {
-        if preceded_by(text, left, o) && followed_by(text, right, c) {
-            return Some((left - o.len(), right + c.len()));
+        if open_marker_precedes(text, left, kind) && close_marker_follows(text, right, kind) {
+            let o_len = kind.marker().len();
+            let c_len = kind.close_marker().len();
+            return Some((left - o_len, right + c_len));
         }
     }
     None

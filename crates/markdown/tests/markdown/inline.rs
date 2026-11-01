@@ -203,3 +203,63 @@ fn set_font_size_wraps_selection_and_updates_existing_span() {
         "hello <span style=\"font-size: 20px\">world</span>"
     );
 }
+
+#[test]
+fn bold_does_not_activate_or_conflict_with_italic() {
+    use nc_markdown::is_inline_active;
+
+    let text = "hello **world** there";
+    let outer_sel = selection_of(text, "**world**");
+    let inner_sel = selection_of(text, "world");
+
+    // Bold is active on bold text, but italic MUST NOT be active
+    assert!(is_inline_active(text, outer_sel, Inline::Bold));
+    assert!(is_inline_active(text, inner_sel, Inline::Bold));
+    assert!(!is_inline_active(text, outer_sel, Inline::Italic));
+    assert!(!is_inline_active(text, inner_sel, Inline::Italic));
+
+    // Italic text has italic active, but NOT bold
+    let italic_text = "hello *world* there";
+    let italic_outer = selection_of(italic_text, "*world*");
+    let italic_inner = selection_of(italic_text, "world");
+    assert!(is_inline_active(italic_text, italic_outer, Inline::Italic));
+    assert!(is_inline_active(italic_text, italic_inner, Inline::Italic));
+    assert!(!is_inline_active(italic_text, italic_outer, Inline::Bold));
+    assert!(!is_inline_active(italic_text, italic_inner, Inline::Bold));
+
+    // Both bold and italic can be applied simultaneously
+    let bold_and_italic = "hello ***world*** there";
+    let both_outer = selection_of(bold_and_italic, "***world***");
+    let both_inner = selection_of(bold_and_italic, "world");
+    assert!(is_inline_active(bold_and_italic, both_outer, Inline::Bold));
+    assert!(is_inline_active(
+        bold_and_italic,
+        both_outer,
+        Inline::Italic
+    ));
+    assert!(is_inline_active(bold_and_italic, both_inner, Inline::Bold));
+    assert!(is_inline_active(
+        bold_and_italic,
+        both_inner,
+        Inline::Italic
+    ));
+
+    // Adding italic to bold text results in bold+italic without stripping bold
+    let added_italic = toggle_inline(text, outer_sel, Inline::Italic).unwrap();
+    assert_eq!(added_italic.text, "hello ***world*** there");
+
+    // Removing italic from bold+italic restores bold
+    let removed_italic =
+        toggle_inline(&added_italic.text, added_italic.selection, Inline::Italic).unwrap();
+    assert_eq!(removed_italic.text, "hello **world** there");
+    assert!(is_inline_active(
+        &removed_italic.text,
+        removed_italic.selection,
+        Inline::Bold
+    ));
+    assert!(!is_inline_active(
+        &removed_italic.text,
+        removed_italic.selection,
+        Inline::Italic
+    ));
+}
