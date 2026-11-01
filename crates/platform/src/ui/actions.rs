@@ -37,6 +37,15 @@ pub fn run(shell: &mut Shell, ctx: &Context, id: CommandId) {
         "cmd.file.new_window" => shell.new_window_request = true,
         "cmd.file.new_markdown" => shell.open_tab(DocKind::Markdown),
         "cmd.file.open" => open_file_dialog(shell),
+        "cmd.file.open_folder" => open_folder_dialog(shell),
+        "cmd.file.reopen_closed_tab" => reopen_closed_tab(shell),
+        "cmd.file.revert" => reload_active_tab(shell),
+        "cmd.file.copy_path" => copy_file_path(shell, ctx),
+        "cmd.file.reveal_in_explorer" => reveal_in_file_manager(shell),
+        "cmd.file.clear_recent" => clear_recent_files(shell),
+        "cmd.file.close_other_tabs" => close_other_tabs(shell),
+        "cmd.file.close_all_tabs" => close_all_tabs(shell),
+        "cmd.file.export_html" => export_html_dialog(shell),
         "cmd.file.save" => save(shell),
         "cmd.file.save_as" => save_as_dialog(shell),
         "cmd.file.save_all" => save_all(shell),
@@ -157,6 +166,15 @@ pub fn handles(id: CommandId) -> bool {
             | "cmd.file.new_window"
             | "cmd.file.new_markdown"
             | "cmd.file.open"
+            | "cmd.file.open_folder"
+            | "cmd.file.reopen_closed_tab"
+            | "cmd.file.revert"
+            | "cmd.file.copy_path"
+            | "cmd.file.reveal_in_explorer"
+            | "cmd.file.clear_recent"
+            | "cmd.file.close_other_tabs"
+            | "cmd.file.close_all_tabs"
+            | "cmd.file.export_html"
             | "cmd.file.save"
             | "cmd.file.save_as"
             | "cmd.file.save_all"
@@ -510,6 +528,193 @@ fn match_capitalisation(original: &str, replacement: &str) -> String {
 /// Opens the Open dialog (`File ▸ Open`, `Ctrl+O`).
 pub fn open_file_dialog(shell: &mut Shell) {
     shell.file_dialog = Some(FileDialog::open());
+}
+
+/// Opens a folder picker dialog to open a workspace folder (`File ▸ Open folder...`).
+pub fn open_folder_dialog(shell: &mut Shell) {
+    if !shell.native_dialogs {
+        return;
+    }
+    if let Some(folder) = rfd::FileDialog::new()
+        .set_title("Open workspace folder")
+        .pick_folder()
+    {
+        shell.workspace_folder = Some(folder.clone());
+        shell.sidebar_visible = true;
+        let display_name = folder.file_name().map_or_else(
+            || folder.to_string_lossy().into_owned(),
+            |n| n.to_string_lossy().into_owned(),
+        );
+        shell.notification = Some(format!("Opened workspace: {display_name}"));
+    }
+}
+
+/// Reopens the last closed tab in this window (`Ctrl+Alt+T`, `File ▸ Reopen closed tab`).
+pub fn reopen_closed_tab(shell: &mut Shell) {
+    let Some(closed) = shell.closed_tabs.pop() else {
+        return;
+    };
+    if let Some(path) = closed.path {
+        open_path(shell, &path, Some((closed.encoding, closed.bom)));
+    } else {
+        let file = nc_textproc::TextFile::restore(
+            std::path::PathBuf::new(),
+            closed.encoding,
+            closed.bom,
+            closed.line_ending,
+            &closed.text,
+            false,
+        );
+        let tab = Tab::restore(file, closed.kind);
+        shell.tabs.push(tab);
+        shell.active = shell.tabs.len() - 1;
+    }
+    sync_caret_to_document(shell);
+    shell.notification = Some(format!("Reopened tab \"{}\"", closed.title));
+}
+
+/// Discards changes and reloads the active document from disk (`Ctrl+Shift+R`, `File ▸ Reload from disk`).
+pub fn reload_active_tab(shell: &mut Shell) {
+    let index = shell.active;
+    let Some(tab) = shell.tabs.get_mut(index) else {
+        return;
+    };
+    if !tab.file.has_path() {
+        return;
+    }
+    if tab.is_dirty() {
+        shell.prompt = Some(Prompt::OutsideChange {
+            tab: index,
+            path: tab.file.path().to_path_buf(),
+        });
+        return;
+    }
+    let name = tab.title();
+    match tab.file.reload() {
+        Ok(()) => {
+            sync_caret_to_document(shell);
+            shell.notification = Some(format!("Reloaded \"{name}\" from disk"));
+        }
+        Err(err) => shell.notification = Some(format!("Could not reload \"{name}\": {err}")),
+    }
+}
+
+/// Copies the absolute path of the active document to the system clipboard (`Ctrl+Alt+C`, `File ▸ Copy file path`).
+pub fn copy_file_path(shell: &mut Shell, ctx: &Context) {
+    let Some(tab) = shell.active_tab() else {
+        return;
+    };
+    if tab.file.has_path() {
+        let path_str = tab.file.path().display().to_string();
+        ctx.copy_text(path_str.clone());
+        shell.notification = Some(format!("Copied path to clipboard: {path_str}"));
+    }
+}
+
+/// Reveals the active document's containing folder in the system file manager (`File ▸ Reveal in file manager`).
+pub fn reveal_in_file_manager(shell: &mut Shell) {
+    let Some(tab) = shell.active_tab() else {
+        return;
+    };
+    if !tab.file.has_path() {
+        return;
+    }
+    let path = tab.file.path();
+    let folder = if path.is_dir() {
+        path
+    } else {
+        path.parent().unwrap_or(path)
+    };
+
+    #[cfg(target_os = "windows")]
+    let res = std::process::Command::new("explorer")
+        .arg(format!("/select,\"{}\"", path.display()))
+        .spawn();
+
+    #[cfg(target_os = "macos")]
+    let res = std::process::Command::new("open")
+        .arg("-R")
+        .arg(path)
+        .spawn();
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let res = std::process::Command::new("xdg-open").arg(folder).spawn();
+
+    match res {
+        Ok(_) => shell.notification = Some("Opened file manager".to_owned()),
+        Err(e) => shell.notification = Some(format!("Could not open file manager: {e}")),
+    }
+}
+
+/// Clears the recent files list (`File ▸ Recent ▸ Clear recent files`).
+pub fn clear_recent_files(shell: &mut Shell) {
+    shell.recent_files.clear();
+    shell.notification = Some("Recent files list cleared".to_owned());
+}
+
+/// Closes all tabs except the active one (`File ▸ Close other tabs`).
+pub fn close_other_tabs(shell: &mut Shell) {
+    let active = shell.active;
+    let mut i = shell.tabs.len();
+    while i > 0 {
+        i -= 1;
+        if i != active {
+            if shell.tabs[i].is_dirty() {
+                close_tab(shell, i);
+                return;
+            }
+            shell.close_tab(i);
+        }
+    }
+}
+
+/// Closes all open tabs, resetting to a single fresh untitled document (`File ▸ Close all tabs`).
+pub fn close_all_tabs(shell: &mut Shell) {
+    while shell.tabs.len() > 1 {
+        let last = shell.tabs.len() - 1;
+        if shell.tabs[last].is_dirty() {
+            close_tab(shell, last);
+            return;
+        }
+        shell.close_tab(last);
+    }
+    close_tab(shell, 0);
+}
+
+/// Exports the active document to a self-contained HTML file (`File ▸ Export ▸ Export as HTML`).
+pub fn export_html_dialog(shell: &mut Shell) {
+    let Some(tab) = shell.active_tab() else {
+        return;
+    };
+    let title = tab.title();
+    let text = tab.text().to_owned();
+    let default_name = format!(
+        "{}.html",
+        title.trim_end_matches(".md").trim_end_matches(".txt")
+    );
+
+    if shell.native_dialogs {
+        if let Some(save_path) = rfd::FileDialog::new()
+            .set_title("Export as HTML")
+            .set_file_name(&default_name)
+            .add_filter("HTML document", &["html", "htm"])
+            .save_file()
+        {
+            let html_content = nc_markdown::export_html(&title, &text);
+            match std::fs::write(&save_path, html_content) {
+                Ok(()) => {
+                    let display_name = save_path.file_name().map_or_else(
+                        || save_path.display().to_string(),
+                        |n| n.to_string_lossy().into_owned(),
+                    );
+                    shell.notification = Some(format!("Exported HTML to {display_name}"));
+                }
+                Err(e) => {
+                    shell.notification = Some(format!("Could not export HTML: {e}"));
+                }
+            }
+        }
+    }
 }
 
 /// Saves the active document (`File ▸ Save`, `Ctrl+S`).

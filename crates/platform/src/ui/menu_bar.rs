@@ -531,6 +531,12 @@ fn recent_submenu(
                 ui.close();
             }
         }
+        ui.add(egui::Separator::default().spacing(0.0));
+        let clear_button = egui::Button::new("Clear recent files").min_size(egui::vec2(210.0, 0.0));
+        if ui.add(clear_button).clicked() {
+            actions::run(shell, ctx, CommandId("cmd.file.clear_recent"));
+            ui.close();
+        }
     });
 }
 

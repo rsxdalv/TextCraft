@@ -44,10 +44,18 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context) {
                 egui::vec2(panel_rect.width(), HEADER_HEIGHT),
                 Sense::hover(),
             );
+            let title = if let Some(folder) = &shell.workspace_folder {
+                folder
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned().to_uppercase())
+                    .unwrap_or_else(|| "WORKSPACE".to_owned())
+            } else {
+                "WORKSPACE".to_owned()
+            };
             ui.painter().text(
                 egui::pos2(header_rect.left() + spacing::MD, header_rect.center().y),
                 Align2::LEFT_CENTER,
-                "WORKSPACE",
+                &title,
                 FontId::proportional(10.5),
                 palette.text,
             );

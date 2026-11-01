@@ -182,7 +182,7 @@ pub const REGISTRY: &[CommandSpec] = &[
         "Save all",
         menu(TopMenu::File),
         Some(CTRL_ALT_S),
-        Availability::MultipleTabs,
+        Availability::SaveAll,
         6,
     ),
     // `File ▸ Page setup` opens the §8 dialog; `File ▸ Print` (Ctrl+P) prints with the
@@ -233,6 +233,93 @@ pub const REGISTRY: &[CommandSpec] = &[
         Some(ALT_F4),
         Availability::Always,
         2,
+    ),
+    cmd(
+        "cmd.file.open_folder",
+        114,
+        "Open folder...",
+        menu(TopMenu::File),
+        None,
+        Availability::Always,
+        6,
+    ),
+    cmd(
+        "cmd.file.reopen_closed_tab",
+        115,
+        "Reopen closed tab",
+        menu(TopMenu::File),
+        Some(CTRL_ALT_T),
+        Availability::HasClosedTabs,
+        6,
+    ),
+    cmd(
+        "cmd.file.revert",
+        116,
+        "Reload from disk",
+        menu(TopMenu::File),
+        Some(CTRL_SHIFT_R),
+        Availability::HasPath,
+        4,
+    ),
+    cmd(
+        "cmd.file.copy_path",
+        117,
+        "Copy file path",
+        menu(TopMenu::File),
+        Some(CTRL_ALT_C),
+        Availability::HasPath,
+        6,
+    ),
+    cmd(
+        "cmd.file.reveal_in_explorer",
+        118,
+        "Reveal in file manager",
+        menu(TopMenu::File),
+        None,
+        Availability::HasPath,
+        6,
+    ),
+    cmd_placed(
+        "cmd.file.clear_recent",
+        119,
+        "Clear recent files",
+        MenuPlacement {
+            menu: TopMenu::File,
+            submenu: Some("Recent"),
+        },
+        None,
+        Availability::HasRecent,
+        6,
+    ),
+    cmd(
+        "cmd.file.close_other_tabs",
+        122,
+        "Close other tabs",
+        menu(TopMenu::File),
+        None,
+        Availability::MultipleTabs,
+        6,
+    ),
+    cmd(
+        "cmd.file.close_all_tabs",
+        123,
+        "Close all tabs",
+        menu(TopMenu::File),
+        None,
+        Availability::Edited,
+        6,
+    ),
+    cmd_placed(
+        "cmd.file.export_html",
+        124,
+        "Export as HTML",
+        MenuPlacement {
+            menu: TopMenu::File,
+            submenu: Some("Export"),
+        },
+        None,
+        Availability::Edited,
+        7,
     ),
     // --- Tabs (keyboard only; the reference menu bar has no tab entries) ---
     cmd(
@@ -928,6 +1015,9 @@ const CTRL_TAB: Shortcut = Shortcut::new(Modifiers::CTRL, Key::Tab);
 const CTRL_SHIFT_TAB: Shortcut = Shortcut::new(Modifiers::CTRL_SHIFT, Key::Tab);
 const CTRL_SHIFT_7: Shortcut = Shortcut::new(Modifiers::CTRL_SHIFT, Key::Digit(7));
 const CTRL_SHIFT_8: Shortcut = Shortcut::new(Modifiers::CTRL_SHIFT, Key::Digit(8));
+const CTRL_SHIFT_R: Shortcut = Shortcut::new(Modifiers::CTRL_SHIFT, Key::Letter('R'));
+const CTRL_ALT_T: Shortcut = Shortcut::new(Modifiers::CTRL_ALT, Key::Letter('T'));
+const CTRL_ALT_C: Shortcut = Shortcut::new(Modifiers::CTRL_ALT, Key::Letter('C'));
 
 /// Looks a command up by its stable identifier.
 pub fn by_id(id: &str) -> Option<&'static CommandSpec> {
@@ -1102,19 +1192,38 @@ pub const MENU_BAR: &[MenuBar] = &[
             MenuNode::Command(CommandId("cmd.file.new_tab")),
             MenuNode::Command(CommandId("cmd.file.new_window")),
             MenuNode::Command(CommandId("cmd.file.new_markdown")),
+            MenuNode::Separator,
             MenuNode::Command(CommandId("cmd.file.open")),
+            MenuNode::Command(CommandId("cmd.file.open_folder")),
             MenuNode::Submenu(
                 "Recent",
-                &[MenuNode::Command(CommandId("cmd.file.recent_empty"))],
+                &[
+                    MenuNode::Command(CommandId("cmd.file.recent_empty")),
+                    MenuNode::Separator,
+                    MenuNode::Command(CommandId("cmd.file.clear_recent")),
+                ],
             ),
+            MenuNode::Command(CommandId("cmd.file.reopen_closed_tab")),
+            MenuNode::Separator,
             MenuNode::Command(CommandId("cmd.file.save")),
             MenuNode::Command(CommandId("cmd.file.save_as")),
             MenuNode::Command(CommandId("cmd.file.save_all")),
+            MenuNode::Command(CommandId("cmd.file.revert")),
+            MenuNode::Separator,
+            MenuNode::Submenu(
+                "Export",
+                &[MenuNode::Command(CommandId("cmd.file.export_html"))],
+            ),
+            MenuNode::Separator,
+            MenuNode::Command(CommandId("cmd.file.reveal_in_explorer")),
+            MenuNode::Command(CommandId("cmd.file.copy_path")),
             MenuNode::Separator,
             MenuNode::Command(CommandId("cmd.file.page_setup")),
             MenuNode::Command(CommandId("cmd.file.print")),
             MenuNode::Separator,
             MenuNode::Command(CommandId("cmd.file.close_tab")),
+            MenuNode::Command(CommandId("cmd.file.close_other_tabs")),
+            MenuNode::Command(CommandId("cmd.file.close_all_tabs")),
             MenuNode::Command(CommandId("cmd.file.close_window")),
             MenuNode::Command(CommandId("cmd.file.exit")),
         ],

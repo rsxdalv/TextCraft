@@ -319,32 +319,42 @@ fn native_file_dialog(shell: &mut Shell) {
         return;
     };
     let picker = rfd::FileDialog::new().set_directory(&dialog.directory);
-    let picked = match dialog.mode {
-        FileDialogMode::Open => picker
-            .set_title("Open")
-            .add_filter("Text documents", &["txt", "md", "markdown", "log"])
-            .add_filter("All files", &["*"])
-            .pick_file(),
-        FileDialogMode::SaveAs => picker
-            .set_title("Save as")
-            .set_file_name(dialog.file_name.as_str())
-            .add_filter("Text documents", &["txt"])
-            .add_filter("Markdown", &["md"])
-            .add_filter("All files", &["*"])
-            .save_file(),
-    };
-    match picked {
-        Some(path) => {
-            if let Some(parent) = path.parent() {
-                dialog.directory = parent.to_path_buf();
+    match dialog.mode {
+        FileDialogMode::Open => {
+            let picked = picker
+                .set_title("Open")
+                .add_filter("Text documents", &["txt", "md", "markdown", "log"])
+                .add_filter("All files", &["*"])
+                .pick_files();
+            shell.file_dialog = None;
+            if let Some(paths) = picked {
+                for path in paths {
+                    actions::open_path(shell, &path, None);
+                }
             }
-            dialog.file_name = path
-                .file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            actions::confirm_file_dialog(shell);
         }
-        None => shell.file_dialog = None,
+        FileDialogMode::SaveAs => {
+            let picked = picker
+                .set_title("Save as")
+                .set_file_name(dialog.file_name.as_str())
+                .add_filter("Text documents", &["txt"])
+                .add_filter("Markdown", &["md"])
+                .add_filter("All files", &["*"])
+                .save_file();
+            match picked {
+                Some(path) => {
+                    if let Some(parent) = path.parent() {
+                        dialog.directory = parent.to_path_buf();
+                    }
+                    dialog.file_name = path
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    actions::confirm_file_dialog(shell);
+                }
+                None => shell.file_dialog = None,
+            }
+        }
     }
 }
 

@@ -662,6 +662,25 @@ fn read_directory(directory: &Path) -> Vec<DirEntry> {
     entries
 }
 
+/// A tab that was closed, remembered so `File ▸ Reopen closed tab` can restore it.
+#[derive(Debug, Clone)]
+pub struct ClosedTab {
+    /// The file path, if any.
+    pub path: Option<PathBuf>,
+    /// The title of the tab.
+    pub title: String,
+    /// The kind of document (Plain or Markdown).
+    pub kind: DocKind,
+    /// The document text at the moment of closing.
+    pub text: String,
+    /// The encoding.
+    pub encoding: Encoding,
+    /// Whether the file had a BOM.
+    pub bom: bool,
+    /// The line ending style.
+    pub line_ending: nc_core::LineEnding,
+}
+
 /// A prompt raised before something is destroyed (`docs/ui-reference.md` §9).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Prompt {
@@ -1149,6 +1168,10 @@ pub struct Shell {
     /// a new window*). Empty for a plain `File ▸ New window`, which opens one empty
     /// document.
     pub new_window_documents: Vec<Tab>,
+    /// Recently closed tabs in this window (LIFO stack for Reopen Closed Tab).
+    pub closed_tabs: Vec<ClosedTab>,
+    /// Currently opened workspace folder, if any.
+    pub workspace_folder: Option<PathBuf>,
 }
 
 impl Shell {
@@ -1158,6 +1181,8 @@ impl Shell {
             tabs: vec![Tab::plain()],
             active: 0,
             recent_files: Vec::new(),
+            closed_tabs: Vec::new(),
+            workspace_folder: None,
             show_settings: false,
             status_bar_visible: true,
             sidebar_visible: true,
@@ -1224,6 +1249,11 @@ impl Shell {
     /// The availability context derived from the current state.
     pub fn availability(&self) -> AvailabilityContext {
         let tab = self.active_tab();
+        let has_path = tab.map(|t| t.file.has_path()).unwrap_or(false);
+        let any_dirty = self.tabs.iter().any(Tab::is_dirty);
+        let has_recent = !self.recent_files.is_empty();
+        let has_closed_tabs = !self.closed_tabs.is_empty();
+
         AvailabilityContext {
             document_present: tab.is_some(),
             dirty: tab.map(Tab::is_dirty).unwrap_or(false),
@@ -1239,6 +1269,10 @@ impl Shell {
             sidebar_visible: self.sidebar_visible,
             word_wrap: self.word_wrap,
             formatted_view: self.formatted_view(),
+            has_path,
+            any_dirty,
+            has_recent,
+            has_closed_tabs,
         }
     }
 
@@ -1300,7 +1334,20 @@ impl Shell {
         if index >= self.tabs.len() {
             return;
         }
-        self.tabs.remove(index);
+        let tab = self.tabs.remove(index);
+        let closed = ClosedTab {
+            path: tab.file.has_path().then(|| tab.file.path().to_path_buf()),
+            title: tab.title(),
+            kind: tab.kind,
+            text: tab.text().to_owned(),
+            encoding: tab.file.encoding(),
+            bom: tab.file.has_bom(),
+            line_ending: tab.file.document().line_ending(),
+        };
+        self.closed_tabs.push(closed);
+        if self.closed_tabs.len() > 30 {
+            self.closed_tabs.remove(0);
+        }
         if self.tabs.is_empty() {
             self.tabs.push(Tab::plain());
             self.active = 0;
