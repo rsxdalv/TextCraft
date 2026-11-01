@@ -160,3 +160,46 @@ fn checklist_quote_code_hr_and_image_format_as_expected() {
     let img = insert_image("see diagram", selection_of("see diagram", "diagram"), "").unwrap();
     assert_eq!(img.text, "see ![diagram]()");
 }
+
+#[test]
+fn set_font_family_wraps_selection_and_updates_existing_span() {
+    use nc_markdown::set_font_family;
+
+    let text = "hello world";
+    let wrapped = set_font_family(text, selection_of(text, "world"), "Fira Mono").unwrap();
+    assert_eq!(
+        wrapped.text,
+        "hello <span style=\"font-family: 'Fira Mono'\">world</span>"
+    );
+
+    // Updating existing font family span
+    let updated = set_font_family(
+        &wrapped.text,
+        selection_of(&wrapped.text, "world"),
+        "IBM Plex Mono",
+    )
+    .unwrap();
+    assert_eq!(
+        updated.text,
+        "hello <span style=\"font-family: 'IBM Plex Mono'\">world</span>"
+    );
+}
+
+#[test]
+fn set_font_size_wraps_selection_and_updates_existing_span() {
+    use nc_markdown::set_font_size;
+
+    let text = "hello world";
+    let wrapped = set_font_size(text, selection_of(text, "world"), 18).unwrap();
+    assert_eq!(
+        wrapped.text,
+        "hello <span style=\"font-size: 18px\">world</span>"
+    );
+
+    // Updating existing font size span
+    let updated = set_font_size(&wrapped.text, selection_of(&wrapped.text, "world"), 20).unwrap();
+    assert_eq!(
+        updated.text,
+        "hello <span style=\"font-size: 20px\">world</span>"
+    );
+}
