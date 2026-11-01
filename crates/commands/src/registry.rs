@@ -347,16 +347,16 @@ pub const REGISTRY: &[CommandSpec] = &[
         "Undo",
         menu(TopMenu::Edit),
         Some(CTRL_Z),
-        Availability::Edited,
+        Availability::CanUndo,
         3,
     ),
     cmd(
         "cmd.edit.redo",
         202,
         "Redo",
-        None,
+        menu(TopMenu::Edit),
         Some(CTRL_Y),
-        Availability::Dirty,
+        Availability::CanRedo,
         3,
     ),
     cmd(
@@ -487,6 +487,150 @@ pub const REGISTRY: &[CommandSpec] = &[
         Some(F7),
         Availability::Edited,
         8,
+    ),
+    cmd(
+        "cmd.edit.delete_line",
+        217,
+        "Delete line",
+        menu(TopMenu::Edit),
+        Some(CTRL_SHIFT_K),
+        Availability::Edited,
+        3,
+    ),
+    cmd(
+        "cmd.edit.duplicate",
+        218,
+        "Duplicate line or selection",
+        menu(TopMenu::Edit),
+        Some(CTRL_D),
+        Availability::Edited,
+        3,
+    ),
+    cmd(
+        "cmd.edit.move_line_up",
+        219,
+        "Move line up",
+        menu(TopMenu::Edit),
+        Some(ALT_UP),
+        Availability::Edited,
+        3,
+    ),
+    cmd(
+        "cmd.edit.move_line_down",
+        220,
+        "Move line down",
+        menu(TopMenu::Edit),
+        Some(ALT_DOWN),
+        Availability::Edited,
+        3,
+    ),
+    cmd(
+        "cmd.edit.join_lines",
+        221,
+        "Join lines",
+        menu(TopMenu::Edit),
+        Some(CTRL_J),
+        Availability::Edited,
+        3,
+    ),
+    cmd(
+        "cmd.edit.toggle_comment",
+        222,
+        "Toggle line comment",
+        menu(TopMenu::Edit),
+        Some(CTRL_SLASH),
+        Availability::Edited,
+        3,
+    ),
+    cmd_placed(
+        "cmd.edit.transform_upper",
+        223,
+        "UPPERCASE",
+        MenuPlacement {
+            menu: TopMenu::Edit,
+            submenu: Some("Transform"),
+        },
+        Some(CTRL_SHIFT_U),
+        Availability::Edited,
+        3,
+    ),
+    cmd_placed(
+        "cmd.edit.transform_lower",
+        224,
+        "lowercase",
+        MenuPlacement {
+            menu: TopMenu::Edit,
+            submenu: Some("Transform"),
+        },
+        Some(CTRL_SHIFT_L),
+        Availability::Edited,
+        3,
+    ),
+    cmd_placed(
+        "cmd.edit.transform_title",
+        225,
+        "Title Case",
+        MenuPlacement {
+            menu: TopMenu::Edit,
+            submenu: Some("Transform"),
+        },
+        None,
+        Availability::Edited,
+        3,
+    ),
+    cmd_placed(
+        "cmd.edit.sort_lines_asc",
+        226,
+        "Sort lines ascending",
+        MenuPlacement {
+            menu: TopMenu::Edit,
+            submenu: Some("Line operations"),
+        },
+        None,
+        Availability::Edited,
+        3,
+    ),
+    cmd_placed(
+        "cmd.edit.sort_lines_desc",
+        227,
+        "Sort lines descending",
+        MenuPlacement {
+            menu: TopMenu::Edit,
+            submenu: Some("Line operations"),
+        },
+        None,
+        Availability::Edited,
+        3,
+    ),
+    cmd_placed(
+        "cmd.edit.trim_trailing",
+        228,
+        "Trim trailing whitespace",
+        MenuPlacement {
+            menu: TopMenu::Edit,
+            submenu: Some("Line operations"),
+        },
+        None,
+        Availability::Edited,
+        3,
+    ),
+    cmd(
+        "cmd.edit.select_line",
+        229,
+        "Select line",
+        menu(TopMenu::Edit),
+        Some(CTRL_L),
+        Availability::Edited,
+        3,
+    ),
+    cmd(
+        "cmd.edit.select_word",
+        230,
+        "Select word",
+        menu(TopMenu::Edit),
+        None,
+        Availability::Edited,
+        3,
     ),
     // --- View -----------------------------------------------------------
     cmd_placed(
@@ -1018,6 +1162,15 @@ const CTRL_SHIFT_8: Shortcut = Shortcut::new(Modifiers::CTRL_SHIFT, Key::Digit(8
 const CTRL_SHIFT_R: Shortcut = Shortcut::new(Modifiers::CTRL_SHIFT, Key::Letter('R'));
 const CTRL_ALT_T: Shortcut = Shortcut::new(Modifiers::CTRL_ALT, Key::Letter('T'));
 const CTRL_ALT_C: Shortcut = Shortcut::new(Modifiers::CTRL_ALT, Key::Letter('C'));
+const CTRL_D: Shortcut = Shortcut::new(Modifiers::CTRL, Key::Letter('D'));
+const CTRL_J: Shortcut = Shortcut::new(Modifiers::CTRL, Key::Letter('J'));
+const CTRL_L: Shortcut = Shortcut::new(Modifiers::CTRL, Key::Letter('L'));
+const CTRL_SLASH: Shortcut = Shortcut::new(Modifiers::CTRL, Key::Question);
+const CTRL_SHIFT_K: Shortcut = Shortcut::new(Modifiers::CTRL_SHIFT, Key::Letter('K'));
+const CTRL_SHIFT_U: Shortcut = Shortcut::new(Modifiers::CTRL_SHIFT, Key::Letter('U'));
+const CTRL_SHIFT_L: Shortcut = Shortcut::new(Modifiers::CTRL_SHIFT, Key::Letter('L'));
+const ALT_UP: Shortcut = Shortcut::new(Modifiers::ALT, Key::Up);
+const ALT_DOWN: Shortcut = Shortcut::new(Modifiers::ALT, Key::Down);
 
 /// Looks a command up by its stable identifier.
 pub fn by_id(id: &str) -> Option<&'static CommandSpec> {
@@ -1232,10 +1385,35 @@ pub const MENU_BAR: &[MenuBar] = &[
         menu: TopMenu::Edit,
         nodes: &[
             MenuNode::Command(CommandId("cmd.edit.undo")),
+            MenuNode::Command(CommandId("cmd.edit.redo")),
+            MenuNode::Separator,
             MenuNode::Command(CommandId("cmd.edit.cut")),
             MenuNode::Command(CommandId("cmd.edit.copy")),
             MenuNode::Command(CommandId("cmd.edit.paste")),
             MenuNode::Command(CommandId("cmd.edit.delete")),
+            MenuNode::Command(CommandId("cmd.edit.delete_line")),
+            MenuNode::Command(CommandId("cmd.edit.duplicate")),
+            MenuNode::Command(CommandId("cmd.edit.move_line_up")),
+            MenuNode::Command(CommandId("cmd.edit.move_line_down")),
+            MenuNode::Command(CommandId("cmd.edit.join_lines")),
+            MenuNode::Command(CommandId("cmd.edit.toggle_comment")),
+            MenuNode::Separator,
+            MenuNode::Submenu(
+                "Transform",
+                &[
+                    MenuNode::Command(CommandId("cmd.edit.transform_upper")),
+                    MenuNode::Command(CommandId("cmd.edit.transform_lower")),
+                    MenuNode::Command(CommandId("cmd.edit.transform_title")),
+                ],
+            ),
+            MenuNode::Submenu(
+                "Line operations",
+                &[
+                    MenuNode::Command(CommandId("cmd.edit.sort_lines_asc")),
+                    MenuNode::Command(CommandId("cmd.edit.sort_lines_desc")),
+                    MenuNode::Command(CommandId("cmd.edit.trim_trailing")),
+                ],
+            ),
             MenuNode::Separator,
             MenuNode::Command(CommandId("cmd.md.clear")),
             MenuNode::Command(CommandId("cmd.edit.define_bing")),
@@ -1247,6 +1425,8 @@ pub const MENU_BAR: &[MenuBar] = &[
             MenuNode::Command(CommandId("cmd.edit.go_to")),
             MenuNode::Separator,
             MenuNode::Command(CommandId("cmd.edit.select_all")),
+            MenuNode::Command(CommandId("cmd.edit.select_line")),
+            MenuNode::Command(CommandId("cmd.edit.select_word")),
             MenuNode::Command(CommandId("cmd.edit.time_date")),
         ],
     },

@@ -58,7 +58,21 @@ pub fn run(shell: &mut Shell, ctx: &Context, id: CommandId) {
         "cmd.edit.undo" => undo(shell),
         "cmd.edit.redo" => redo(shell),
         "cmd.edit.select_all" => select_all(shell),
+        "cmd.edit.select_line" => select_line(shell),
+        "cmd.edit.select_word" => select_word(shell),
         "cmd.edit.delete" => delete_selection(shell),
+        "cmd.edit.delete_line" => delete_line(shell),
+        "cmd.edit.duplicate" => duplicate(shell),
+        "cmd.edit.move_line_up" => move_line_up(shell),
+        "cmd.edit.move_line_down" => move_line_down(shell),
+        "cmd.edit.join_lines" => join_lines(shell),
+        "cmd.edit.toggle_comment" => toggle_comment(shell),
+        "cmd.edit.transform_upper" => transform_case(shell, nc_core::CaseKind::Upper),
+        "cmd.edit.transform_lower" => transform_case(shell, nc_core::CaseKind::Lower),
+        "cmd.edit.transform_title" => transform_case(shell, nc_core::CaseKind::Title),
+        "cmd.edit.sort_lines_asc" => sort_lines(shell, true),
+        "cmd.edit.sort_lines_desc" => sort_lines(shell, false),
+        "cmd.edit.trim_trailing" => trim_trailing_whitespace(shell),
         "cmd.edit.cut" => cut(shell, ctx),
         "cmd.edit.copy" => copy(shell, ctx),
         "cmd.edit.paste" => request_paste(ctx),
@@ -188,7 +202,21 @@ pub fn handles(id: CommandId) -> bool {
             | "cmd.edit.undo"
             | "cmd.edit.redo"
             | "cmd.edit.select_all"
+            | "cmd.edit.select_line"
+            | "cmd.edit.select_word"
             | "cmd.edit.delete"
+            | "cmd.edit.delete_line"
+            | "cmd.edit.duplicate"
+            | "cmd.edit.move_line_up"
+            | "cmd.edit.move_line_down"
+            | "cmd.edit.join_lines"
+            | "cmd.edit.toggle_comment"
+            | "cmd.edit.transform_upper"
+            | "cmd.edit.transform_lower"
+            | "cmd.edit.transform_title"
+            | "cmd.edit.sort_lines_asc"
+            | "cmd.edit.sort_lines_desc"
+            | "cmd.edit.trim_trailing"
             | "cmd.edit.cut"
             | "cmd.edit.copy"
             | "cmd.edit.paste"
@@ -334,6 +362,169 @@ pub fn insert_time_date(shell: &mut Shell, moment: TimeDate) {
     sync_caret_to_document(shell);
 }
 
+/// Duplicates the current selection, or the current line if there is no selection (`Ctrl+D`).
+pub fn duplicate(shell: &mut Shell) {
+    if let Some(tab) = shell.active_tab_mut() {
+        tab.document_mut().duplicate_current();
+    }
+    sync_caret_to_document(shell);
+}
+
+/// Deletes the entire current line (`Ctrl+Shift+K`).
+pub fn delete_line(shell: &mut Shell) {
+    if let Some(tab) = shell.active_tab_mut() {
+        tab.document_mut().delete_line();
+    }
+    sync_caret_to_document(shell);
+}
+
+/// Swaps the current line with the line above (`Alt+Up`).
+pub fn move_line_up(shell: &mut Shell) {
+    if let Some(tab) = shell.active_tab_mut() {
+        tab.document_mut().move_line_up();
+    }
+    sync_caret_to_document(shell);
+}
+
+/// Swaps the current line with the line below (`Alt+Down`).
+pub fn move_line_down(shell: &mut Shell) {
+    if let Some(tab) = shell.active_tab_mut() {
+        tab.document_mut().move_line_down();
+    }
+    sync_caret_to_document(shell);
+}
+
+/// Joins the current line with the next line (`Ctrl+J`).
+pub fn join_lines(shell: &mut Shell) {
+    if let Some(tab) = shell.active_tab_mut() {
+        tab.document_mut().join_lines();
+    }
+    sync_caret_to_document(shell);
+}
+
+/// Toggles line comments or HTML comments on the current selection or line (`Ctrl+/`).
+pub fn toggle_comment(shell: &mut Shell) {
+    let Some(tab) = shell.active_tab_mut() else {
+        return;
+    };
+    let is_markdown = tab.kind == DocKind::Markdown;
+    let doc = tab.document_mut();
+    let range = doc.selection().range();
+    let (first_line, last_line) = if doc.has_selection() {
+        (
+            doc.buffer().line_of(range.start),
+            doc.buffer().line_of(range.end),
+        )
+    } else {
+        let l = doc.buffer().line_of(doc.caret());
+        (l, l)
+    };
+
+    if is_markdown {
+        let (start, end) = if doc.has_selection() {
+            (range.start, range.end)
+        } else {
+            let s = doc.buffer().line_start(first_line).unwrap_or(0);
+            let e = doc.buffer().line_end(first_line).unwrap_or(0);
+            (s, e)
+        };
+        if let Some(text) = doc.buffer().slice(start..end).map(ToOwned::to_owned) {
+            let trimmed = text.trim();
+            if trimmed.starts_with("<!--") && trimmed.ends_with("-->") {
+                let inner = trimmed[4..trimmed.len() - 3].trim().to_owned();
+                doc.replace_range(start..end, &inner);
+            } else {
+                let wrapped = format!("<!-- {text} -->");
+                doc.replace_range(start..end, &wrapped);
+            }
+        }
+    } else {
+        let mut all_commented = true;
+        for i in first_line..=last_line {
+            if let Some(line) = doc.buffer().line(i) {
+                let trimmed = line.trim_start();
+                if !trimmed.is_empty() && !trimmed.starts_with("//") {
+                    all_commented = false;
+                    break;
+                }
+            }
+        }
+
+        let mut replacements = Vec::new();
+        for i in first_line..=last_line {
+            let start = doc.buffer().line_start(i).unwrap_or(0);
+            let end = doc.buffer().line_end(i).unwrap_or(0);
+            if let Some(line) = doc.buffer().slice(start..end) {
+                if all_commented {
+                    let trimmed = line.trim_start();
+                    let leading_ws_len = line.len() - trimmed.len();
+                    let prefix_len = if trimmed.starts_with("// ") {
+                        3
+                    } else if trimmed.starts_with("//") {
+                        2
+                    } else {
+                        0
+                    };
+                    if prefix_len > 0 {
+                        replacements.push((
+                            start + leading_ws_len..start + leading_ws_len + prefix_len,
+                            "",
+                        ));
+                    }
+                } else {
+                    replacements.push((start..start, "// "));
+                }
+            }
+        }
+        if !replacements.is_empty() {
+            doc.replace_ranges(&replacements);
+        }
+    }
+    sync_caret_to_document(shell);
+}
+
+/// Transforms the case of the selection or current word.
+pub fn transform_case(shell: &mut Shell, case: nc_core::CaseKind) {
+    if let Some(tab) = shell.active_tab_mut() {
+        tab.document_mut().transform_case(case);
+    }
+    sync_caret_to_document(shell);
+}
+
+/// Sorts lines covered by the selection or whole document alphabetically.
+pub fn sort_lines(shell: &mut Shell, ascending: bool) {
+    if let Some(tab) = shell.active_tab_mut() {
+        tab.document_mut().sort_lines(ascending);
+    }
+    sync_caret_to_document(shell);
+}
+
+/// Trims trailing whitespace from all lines.
+pub fn trim_trailing_whitespace(shell: &mut Shell) {
+    if let Some(tab) = shell.active_tab_mut() {
+        if tab.document_mut().trim_trailing_whitespace() {
+            shell.notification = Some("Trimmed trailing whitespace".to_owned());
+        }
+    }
+    sync_caret_to_document(shell);
+}
+
+/// Selects the current line (`Ctrl+L`).
+pub fn select_line(shell: &mut Shell) {
+    if let Some(tab) = shell.active_tab_mut() {
+        tab.document_mut().select_line();
+    }
+    sync_caret_to_document(shell);
+}
+
+/// Selects the word under the caret.
+pub fn select_word(shell: &mut Shell) {
+    if let Some(tab) = shell.active_tab_mut() {
+        tab.document_mut().select_word();
+    }
+    sync_caret_to_document(shell);
+}
+
 /// The sheet body is printed at, in points.
 ///
 /// §8 collects the *sheet* — size, orientation, margins, header — and says nothing
@@ -391,12 +582,23 @@ fn send_to_printer(job: &str) -> std::io::Result<()> {
 /// Points the queued editor caret at the active document's own caret, after a
 /// shell command moved it.
 fn sync_caret_to_document(shell: &mut Shell) {
-    let Some(tab) = shell.active_tab() else {
-        return;
+    let (caret, selection) = {
+        let Some(tab) = shell.active_tab() else {
+            return;
+        };
+        let doc = tab.file.document();
+        let text = tab.text();
+        let caret = char_index(text, doc.caret());
+        let selection = if doc.has_selection() {
+            let anchor = char_index(text, doc.selection().anchor());
+            Some((caret, anchor))
+        } else {
+            Some((caret, caret))
+        };
+        (caret, selection)
     };
-    let caret = char_index(tab.text(), tab.file.document().caret());
     shell.caret = caret;
-    shell.pending_selection = Some((caret, caret));
+    shell.pending_selection = selection;
 }
 
 /// The clipboard the shell copies through, backed by `egui`.

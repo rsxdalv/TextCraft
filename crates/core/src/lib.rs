@@ -50,7 +50,7 @@ pub use buffer::{LineColumn, TextBuffer};
 pub use caret::{CaretMovement, PAGE_LINES};
 pub use clipboard::{Clipboard, MemoryClipboard};
 pub use dnd::{DragSource, drop_target};
-pub use document::Document;
+pub use document::{CaseKind, Document};
 pub use line_ending::{LineEnding, LineEndingReport};
 pub use mouse::{ClickKind, click_selection, drag_selection};
 pub use selection::Selection;

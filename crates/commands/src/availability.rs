@@ -31,6 +31,10 @@ pub enum Availability {
     HasClosedTabs,
     /// Enabled when there are multiple tabs or any tab has unsaved changes.
     SaveAll,
+    /// Enabled only when the active document has an edit to undo.
+    CanUndo,
+    /// Enabled only when the active document has an edit to redo.
+    CanRedo,
 }
 
 /// The shell state that availability rules are evaluated against.
@@ -64,6 +68,10 @@ pub struct AvailabilityContext {
     pub has_recent: bool,
     /// Whether there are closed tabs in the window undo stack.
     pub has_closed_tabs: bool,
+    /// Whether the active document has an edit to undo.
+    pub can_undo: bool,
+    /// Whether the active document has an edit to redo.
+    pub can_redo: bool,
 }
 
 impl AvailabilityContext {
@@ -84,6 +92,8 @@ impl AvailabilityContext {
             any_dirty: false,
             has_recent: false,
             has_closed_tabs: false,
+            can_undo: false,
+            can_redo: false,
         }
     }
 }
@@ -110,6 +120,8 @@ impl Availability {
             Availability::HasRecent => context.has_recent,
             Availability::HasClosedTabs => context.has_closed_tabs,
             Availability::SaveAll => context.tab_count > 1 || context.any_dirty,
+            Availability::CanUndo => context.document_present && context.can_undo,
+            Availability::CanRedo => context.document_present && context.can_redo,
         }
     }
 }

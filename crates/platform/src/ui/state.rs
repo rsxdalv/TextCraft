@@ -1254,6 +1254,9 @@ impl Shell {
         let has_recent = !self.recent_files.is_empty();
         let has_closed_tabs = !self.closed_tabs.is_empty();
 
+        let can_undo = tab.map(|t| t.file.document().can_undo()).unwrap_or(false);
+        let can_redo = tab.map(|t| t.file.document().can_redo()).unwrap_or(false);
+
         AvailabilityContext {
             document_present: tab.is_some(),
             dirty: tab.map(Tab::is_dirty).unwrap_or(false),
@@ -1273,6 +1276,8 @@ impl Shell {
             any_dirty,
             has_recent,
             has_closed_tabs,
+            can_undo,
+            can_redo,
         }
     }
 

@@ -117,6 +117,10 @@ pub enum Key {
     Enter,
     /// The `Backspace` key.
     Backspace,
+    /// The `Up` arrow key.
+    Up,
+    /// The `Down` arrow key.
+    Down,
 }
 
 impl Key {
@@ -153,6 +157,8 @@ impl Key {
             Key::Space => "Space",
             Key::Enter => "Enter",
             Key::Backspace => "Backspace",
+            Key::Up => "Up",
+            Key::Down => "Down",
         }
     }
 }
