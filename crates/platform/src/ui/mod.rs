@@ -26,6 +26,7 @@ mod markdown_view;
 mod menu_bar;
 mod session;
 mod settings;
+mod sidebar;
 mod spacing;
 mod state;
 mod status_bar;
@@ -190,6 +191,10 @@ pub(crate) fn draw(shell: &mut Shell, ui: &mut egui::Ui) {
 
     if shell.status_bar_visible && !shell.show_settings {
         status_bar::show(shell, ui);
+    }
+
+    if shell.sidebar_visible && !shell.show_settings {
+        sidebar::show(shell, ui, &ctx);
     }
 
     if shell.show_settings {
