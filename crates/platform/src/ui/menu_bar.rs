@@ -10,7 +10,7 @@ use crate::ui::state::{
     AppTheme, DocKind, EditorMode, MarkdownViewMode, ParagraphStyle, Shell, TextColor,
 };
 use crate::ui::theme::Palette;
-use crate::ui::{a11y, actions, icons, spacing, widgets};
+use crate::ui::{a11y, actions, i18n, icons, spacing, widgets};
 use nc_commands::{CommandId, MenuItem, all_disabled, build_menu_bar, by_id};
 
 /// The height of the top bar, in points.
@@ -173,7 +173,11 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context) {
 ///   button opens that one instead (`File` → `Edit` → `View`) without another click.
 fn menus(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palette, compact: bool) {
     let models = build_menu_bar(shell.availability());
-    let marks = mnemonics(models.iter().map(|model| model.menu.label()));
+    let labels: Vec<&'static str> = models
+        .iter()
+        .map(|model| i18n::tr(shell.language, model.menu.label()))
+        .collect();
+    let marks = mnemonics(labels.iter().copied());
     let show_keys = access_keys_visible(ctx);
     let bar_bottom = ui.max_rect().bottom();
 
@@ -186,11 +190,12 @@ fn menus(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palette, 
         ui.spacing_mut().button_padding = egui::vec2(5.0, 4.0);
     }
     let mut buttons = Vec::with_capacity(models.len());
-    for (model, mark) in models.iter().zip(&marks) {
+    for (idx, (model, mark)) in models.iter().zip(&marks).enumerate() {
+        let label = labels[idx];
         let id = egui::Id::new(("nc_menu_button", model.menu.label()));
         let open = egui::Popup::is_id_open(ctx, id);
         let response = ui.add(
-            egui::Button::new(access_text(ui, model.menu.label(), *mark, show_keys))
+            egui::Button::new(access_text(ui, label, *mark, show_keys))
                 .min_size(egui::vec2(min_w, MENU_BUTTON_HEIGHT))
                 .selected(open),
         );
@@ -204,10 +209,10 @@ fn menus(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palette, 
 
     // Alt+letter opens the menu whose access key it is.
     if let Some(letter) = alt_letter(ctx) {
-        let target = models
+        let target = labels
             .iter()
             .zip(&marks)
-            .position(|(model, mark)| mark_matches(model.menu.label(), *mark, letter));
+            .position(|(label, mark)| mark_matches(label, *mark, letter));
         if let Some(target) = target {
             if let Some(open) = open_index {
                 egui::Popup::close_id(ctx, popup_id(open));
@@ -403,8 +408,8 @@ fn menu_items(
     palette: Palette,
 ) {
     let marks = mnemonics(items.iter().filter_map(|item| match item {
-        MenuItem::Command { spec, .. } => Some(spec.label),
-        MenuItem::Submenu { title, .. } => Some(*title),
+        MenuItem::Command { spec, .. } => Some(i18n::tr(shell.language, spec.label)),
+        MenuItem::Submenu { title, .. } => Some(i18n::tr(shell.language, title)),
         MenuItem::Separator => None,
     }));
     let show_keys = access_keys_visible(ctx);
@@ -434,11 +439,12 @@ fn menu_items(
                 checked,
             } => {
                 let mark = next_mark.next().copied().flatten();
-                let pressed = typed
-                    .is_some_and(|(_, letter)| *enabled && mark_matches(spec.label, mark, letter));
+                let label = i18n::tr(shell.language, spec.label);
+                let pressed =
+                    typed.is_some_and(|(_, letter)| *enabled && mark_matches(label, mark, letter));
                 if command_button_with_access(
                     ui,
-                    spec.label,
+                    label,
                     *checked,
                     accelerator.as_deref(),
                     *enabled,
@@ -458,6 +464,7 @@ fn menu_items(
             }
             MenuItem::Submenu { title, items } => {
                 next_mark.next();
+                let title = i18n::tr(shell.language, title);
                 // Recent opens even with nothing in it, because what it then says
                 // is the point (`recent_submenu`); every other submenu whose
                 // entries are all unavailable stays shut rather than opening onto
@@ -466,17 +473,17 @@ fn menu_items(
                     recent_submenu(title, shell, ui, items, ctx, palette);
                 } else if all_disabled(items) {
                     let button = if reserve {
-                        egui::Button::new((blank(), *title))
+                        egui::Button::new((blank(), title))
                     } else {
-                        egui::Button::new(*title)
+                        egui::Button::new(title)
                     };
                     let _ = ui.add_enabled(false, button);
                 } else {
                     let body = |ui: &mut egui::Ui| menu_items(ui, items, shell, ctx, palette);
                     let _ = if reserve {
-                        ui.menu_button((blank(), *title), body)
+                        ui.menu_button((blank(), title), body)
                     } else {
-                        ui.menu_button(*title, body)
+                        ui.menu_button(title, body)
                     };
                 }
             }
@@ -873,28 +880,30 @@ fn group_blocks(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Pa
 
 /// Group 2: Insertions & Clear formatting (`Link`, `Image`, `Table`, `Aa`).
 fn group_insert(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Palette) {
-    let link = icons::button(ui, "Insert a link", "link", palette).on_hover_text("Insert a link");
-    a11y::label(&link, WidgetType::Button, "Insert a link");
+    let link_tip = i18n::tr(shell.language, "Insert a link");
+    let link = icons::button(ui, link_tip, "link", palette).on_hover_text(link_tip);
+    a11y::label(&link, WidgetType::Button, link_tip);
     if link.clicked() {
         promote_untitled_to_markdown(shell);
         actions::open_link_dialog(shell);
     }
-    let image =
-        icons::button(ui, "Insert an image", "image", palette).on_hover_text("Insert an image");
-    a11y::label(&image, WidgetType::Button, "Insert an image");
+    let image_tip = i18n::tr(shell.language, "Insert an image");
+    let image = icons::button(ui, image_tip, "image", palette).on_hover_text(image_tip);
+    a11y::label(&image, WidgetType::Button, image_tip);
     if image.clicked() {
         promote_untitled_to_markdown(shell);
         actions::open_image_dialog(shell);
     }
-    let table =
-        icons::button(ui, "Insert a table", "table", palette).on_hover_text("Insert a table");
-    a11y::label(&table, WidgetType::Button, "Insert a table");
+    let table_tip = i18n::tr(shell.language, "Insert a table");
+    let table = icons::button(ui, table_tip, "table", palette).on_hover_text(table_tip);
+    a11y::label(&table, WidgetType::Button, table_tip);
     if table.clicked() {
         promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.table"));
     }
-    let clear = widgets::rich_button(ui, RichText::new("Aa")).on_hover_text("Clear all formatting");
-    a11y::label(&clear, WidgetType::Button, "Clear all formatting");
+    let clear_tip = i18n::tr(shell.language, "Clear all formatting");
+    let clear = widgets::rich_button(ui, RichText::new("Aa")).on_hover_text(clear_tip);
+    a11y::label(&clear, WidgetType::Button, clear_tip);
     if clear.clicked() {
         promote_untitled_to_markdown(shell);
         actions::run(shell, ctx, CommandId("cmd.md.clear"));
@@ -958,7 +967,7 @@ fn group_typography(
 
                 if !filtered_bundled.is_empty() {
                     ui.label(
-                        RichText::new("Bundled Fonts")
+                        RichText::new(i18n::tr(shell.language, "Bundled Fonts"))
                             .small()
                             .color(palette.text_dim),
                     );
@@ -985,9 +994,13 @@ fn group_typography(
                         ui.separator();
                     }
                     ui.label(
-                        RichText::new(format!("System Fonts ({})", sys_all.len()))
-                            .small()
-                            .color(palette.text_dim),
+                        RichText::new(format!(
+                            "{} ({})",
+                            i18n::tr(shell.language, "System Fonts"),
+                            sys_all.len()
+                        ))
+                        .small()
+                        .color(palette.text_dim),
                     );
                     for f in &filtered_sys {
                         if ui
@@ -1003,9 +1016,12 @@ fn group_typography(
 
                 if filtered_bundled.is_empty() && filtered_sys.is_empty() {
                     ui.label(
-                        RichText::new("No matching fonts found")
-                            .italics()
-                            .color(palette.text_dim),
+                        RichText::new(match shell.language {
+                            crate::ui::state::AppLanguage::Portuguese => "Nenhuma fonte encontrada",
+                            _ => "No matching fonts found",
+                        })
+                        .italics()
+                        .color(palette.text_dim),
                     );
                 }
             });
@@ -1013,10 +1029,11 @@ fn group_typography(
     let font_menu = font_resp.on_hover_text(format!("Font family ({})", current_family));
     a11y::label(&font_menu, WidgetType::ComboBox, "Font family");
 
+    let dec_tip = i18n::tr(shell.language, "Decrease font size");
     let decrease = ui
         .add(egui::Button::new(RichText::new("-").size(12.0)).min_size(egui::vec2(18.0, 22.0)))
-        .on_hover_text("Decrease font size");
-    a11y::label(&decrease, WidgetType::Button, "Decrease font size");
+        .on_hover_text(dec_tip);
+    a11y::label(&decrease, WidgetType::Button, dec_tip);
     if decrease.clicked() {
         promote_untitled_to_markdown(shell);
         actions::step_font_size(shell, ctx, false);
@@ -1028,10 +1045,11 @@ fn group_typography(
             .size(11.0)
             .color(palette.text),
     );
+    let inc_tip = i18n::tr(shell.language, "Increase font size");
     let increase = ui
         .add(egui::Button::new(RichText::new("+").size(12.0)).min_size(egui::vec2(18.0, 22.0)))
-        .on_hover_text("Increase font size");
-    a11y::label(&increase, WidgetType::Button, "Increase font size");
+        .on_hover_text(inc_tip);
+    a11y::label(&increase, WidgetType::Button, inc_tip);
     if increase.clicked() {
         promote_untitled_to_markdown(shell);
         actions::step_font_size(shell, ctx, true);
@@ -1363,26 +1381,28 @@ fn right_toolbar(
         &mut ui.spacing_mut().item_spacing.x,
         if compact { 4.0 } else { 6.0 },
     );
-    let settings = widgets::icon_button(ui, "⚙").on_hover_text("Settings");
-    a11y::label(&settings, WidgetType::Button, "Settings");
+    let settings_tip = i18n::tr(shell.language, "Settings");
+    let settings = widgets::icon_button(ui, "⚙").on_hover_text(settings_tip);
+    a11y::label(&settings, WidgetType::Button, settings_tip);
     if settings.clicked() {
         actions::run(shell, ctx, CommandId("cmd.app.settings"));
     }
     let icon_only_mode = ui.max_rect().width() < 860.0;
     editor_mode_button(shell, ui, ctx, palette, icon_only_mode);
-    let feedback =
-        icons::button(ui, "Send feedback", "chat", palette).on_hover_text("Send feedback");
-    a11y::label(&feedback, WidgetType::Button, "Send feedback");
+    let feedback_tip = i18n::tr(shell.language, "Send feedback");
+    let feedback = icons::button(ui, feedback_tip, "chat", palette).on_hover_text(feedback_tip);
+    a11y::label(&feedback, WidgetType::Button, feedback_tip);
 
     // Quick Light / Dark theme toggle button (`gui2`: ☀️ Light / 🌙 Dark)
     let is_dark = palette == Palette::DARK;
     let (theme_icon, theme_label) = if is_dark {
-        ("moon", "Dark")
+        ("moon", i18n::tr(shell.language, "Dark"))
     } else {
-        ("sun", "Light")
+        ("sun", i18n::tr(shell.language, "Light"))
     };
+    let toggle_tip = i18n::tr(shell.language, "Toggle theme");
     let theme_btn = if icon_only_theme {
-        icons::button(ui, "Toggle theme", theme_icon, palette).on_hover_text("Toggle theme")
+        icons::button(ui, toggle_tip, theme_icon, palette).on_hover_text(toggle_tip)
     } else {
         ui.add(
             egui::Button::new((
@@ -1391,9 +1411,9 @@ fn right_toolbar(
             ))
             .min_size(egui::vec2(52.0, 26.0)),
         )
-        .on_hover_text("Toggle theme")
+        .on_hover_text(toggle_tip)
     };
-    a11y::label(&theme_btn, WidgetType::Button, "Toggle theme");
+    a11y::label(&theme_btn, WidgetType::Button, toggle_tip);
     if theme_btn.clicked() {
         shell.theme = if is_dark {
             AppTheme::Light

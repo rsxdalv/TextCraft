@@ -4,8 +4,8 @@ use egui::accesskit::Role;
 use egui::{Align, CornerRadius, Frame, Layout, RichText, WidgetType, vec2};
 
 use crate::ui::fonts::FAMILIES;
-use crate::ui::state::{AppTheme, OpenBehavior, Shell};
-use crate::ui::{a11y, spacing, theme::Palette, widgets};
+use crate::ui::state::{AppLanguage, AppTheme, OpenBehavior, Shell};
+use crate::ui::{a11y, i18n, spacing, theme::Palette, widgets};
 
 /// Draws the settings page.
 pub fn show(shell: &mut Shell, ui: &mut egui::Ui) {
@@ -18,7 +18,8 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui) {
         .show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 let palette = shell.palette;
-                ui.label(RichText::new("Settings").size(32.0).color(palette.text));
+                let title = i18n::tr(shell.language, "Settings");
+                ui.label(RichText::new(title).size(32.0).color(palette.text));
                 ui.add_space(spacing::LG);
 
                 ui.horizontal_top(|ui| {
@@ -33,7 +34,7 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui) {
                     ui.allocate_ui_with_layout(
                         vec2(total * 0.34, 0.0),
                         Layout::top_down(Align::Min),
-                        |ui| about_column(ui, palette),
+                        |ui| about_column(shell, ui, palette),
                     );
                 });
             });
@@ -42,13 +43,14 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui) {
 
 /// The left column: the actual settings.
 fn settings_column(shell: &mut Shell, ui: &mut egui::Ui, palette: Palette) {
-    section(ui, "Appearance");
+    let lang = shell.language;
+    section(ui, i18n::tr(lang, "Appearance"));
     card(ui, palette, |ui| {
         row(
             ui,
             palette,
-            "App theme",
-            Some("Select which app theme to display"),
+            i18n::tr(lang, "App theme"),
+            Some(i18n::tr(lang, "Select which app theme to display")),
             |ui| {
                 dropdown(ui, "theme", "App theme", &mut shell.theme);
             },
@@ -56,23 +58,39 @@ fn settings_column(shell: &mut Shell, ui: &mut egui::Ui, palette: Palette) {
     });
 
     ui.add_space(spacing::MD);
-    section(ui, "Text Formatting");
+    section(ui, i18n::tr(lang, "Language"));
     card(ui, palette, |ui| {
-        row(ui, palette, "Font", None, |ui| font_dropdown(ui, shell));
+        row(
+            ui,
+            palette,
+            i18n::tr(lang, "App language"),
+            Some(i18n::tr(lang, "Choose the display language for TextCraft")),
+            |ui| {
+                dropdown(ui, "language", "App language", &mut shell.language);
+            },
+        );
+    });
+
+    ui.add_space(spacing::MD);
+    section(ui, i18n::tr(lang, "Text Formatting"));
+    card(ui, palette, |ui| {
+        row(ui, palette, i18n::tr(lang, "Font"), None, |ui| {
+            font_dropdown(ui, shell)
+        });
     });
     card(ui, palette, |ui| {
         row(
             ui,
             palette,
-            "Word wrap",
-            Some("Fit text within window by default"),
+            i18n::tr(lang, "Word wrap"),
+            Some(i18n::tr(lang, "Fit text within window by default")),
             |ui| {
                 switch_with_label(ui, palette, "Word wrap", &mut shell.word_wrap);
             },
         );
     });
     card(ui, palette, |ui| {
-        row(ui, palette, "Formatting", None, |ui| {
+        row(ui, palette, i18n::tr(lang, "Formatting"), None, |ui| {
             switch_with_label(ui, palette, "Formatting", &mut shell.formatting);
         });
     });
@@ -80,8 +98,8 @@ fn settings_column(shell: &mut Shell, ui: &mut egui::Ui, palette: Palette) {
         row(
             ui,
             palette,
-            "Spell check",
-            Some("Underline likely misspelled words"),
+            i18n::tr(lang, "Spell check"),
+            Some(i18n::tr(lang, "Underline likely misspelled words")),
             |ui| {
                 switch_with_label(ui, palette, "Spell check", &mut shell.spell_check);
             },
@@ -89,20 +107,39 @@ fn settings_column(shell: &mut Shell, ui: &mut egui::Ui, palette: Palette) {
     });
 
     ui.add_space(spacing::MD);
-    section(ui, "Opening TextCraft");
+    section(ui, i18n::tr(lang, "Opening TextCraft"));
     card(ui, palette, |ui| {
-        row(ui, palette, "Opening files", None, |ui| {
+        row(ui, palette, i18n::tr(lang, "Opening files"), None, |ui| {
             dropdown(ui, "opening", "Opening files", &mut shell.opening);
         });
     });
 }
 
 /// The right column: the "About this app" panel.
-fn about_column(ui: &mut egui::Ui, palette: Palette) {
-    ui.label(RichText::new("About this app").size(15.0).strong());
+fn about_column(shell: &Shell, ui: &mut egui::Ui, palette: Palette) {
+    let lang = shell.language;
+    ui.label(
+        RichText::new(i18n::tr(lang, "About this app"))
+            .size(15.0)
+            .strong(),
+    );
     ui.add_space(spacing::SM);
     ui.label(RichText::new(format!("TextCraft {}", env!("CARGO_PKG_VERSION"))).size(13.0));
-    ui.label(RichText::new("© 2026 TextCraft contributors. All rights reserved.").size(13.0));
+    ui.label(
+        RichText::new(match lang {
+            AppLanguage::Portuguese => {
+                "© 2026 Colaboradores do TextCraft. Todos os direitos reservados."
+            }
+            AppLanguage::Spanish => {
+                "© 2026 Colaboradores de TextCraft. Todos los derechos reservados."
+            }
+            AppLanguage::French => "© 2026 Contributeurs de TextCraft. Tous droits réservés.",
+            AppLanguage::German => "© 2026 TextCraft-Mitwirkende. Alle Rechte vorbehalten.",
+            AppLanguage::Italian => "© 2026 Collaboratori di TextCraft. Tutti i diritti riservati.",
+            AppLanguage::English => "© 2026 TextCraft contributors. All rights reserved.",
+        })
+        .size(13.0),
+    );
     ui.add_space(spacing::MD);
     for link in [
         "Software License Terms",
@@ -111,12 +148,16 @@ fn about_column(ui: &mut egui::Ui, palette: Palette) {
         "Third-Party Software Acknowledgments",
     ] {
         ui.add_space(spacing::XS);
-        let _ = ui.link(RichText::new(link).size(13.0).color(palette.accent));
+        let _ = ui.link(
+            RichText::new(i18n::tr(lang, link))
+                .size(13.0)
+                .color(palette.accent),
+        );
     }
     ui.add_space(spacing::LG);
-    let _ = ui.button("Send feedback");
+    let _ = ui.button(i18n::tr(lang, "Send feedback"));
     ui.add_space(spacing::SM);
-    let _ = ui.button("Help");
+    let _ = ui.button(i18n::tr(lang, "Help"));
 }
 
 /// A section heading.
@@ -185,6 +226,15 @@ impl MenuOption for OpenBehavior {
     }
 }
 
+impl MenuOption for AppLanguage {
+    fn title(self) -> &'static str {
+        self.label()
+    }
+    fn options() -> &'static [Self] {
+        &AppLanguage::ALL
+    }
+}
+
 /// A dropdown bound to a [`MenuOption`] type, named for the setting it sets: a
 /// combo box shows only its value, and "Dark" does not say what it is dark of.
 fn dropdown<T: MenuOption>(ui: &mut egui::Ui, id: &str, name: &str, selected: &mut T) {
@@ -213,7 +263,7 @@ fn font_dropdown(ui: &mut egui::Ui, shell: &mut Shell) {
         .width(200.0)
         .show_ui(ui, |ui| {
             ui.label(
-                egui::RichText::new("Bundled Fonts")
+                egui::RichText::new(i18n::tr(shell.language, "Bundled Fonts"))
                     .small()
                     .color(egui::Color32::GRAY),
             );
@@ -230,7 +280,7 @@ fn font_dropdown(ui: &mut egui::Ui, shell: &mut Shell) {
             if !sys.is_empty() {
                 ui.separator();
                 ui.label(
-                    egui::RichText::new("System Fonts")
+                    egui::RichText::new(i18n::tr(shell.language, "System Fonts"))
                         .small()
                         .color(egui::Color32::GRAY),
                 );
@@ -318,6 +368,8 @@ pub(crate) struct Settings {
     status_bar_visible: bool,
     /// `Settings ▸ Opening files`.
     opening: OpenBehavior,
+    /// `Settings ▸ Language`.
+    language: AppLanguage,
     /// `Settings ▸ Spell check`: whether likely misspellings are underlined
     /// (`NC-P004`). Stored and restored like the switches beside it.
     spell_check: bool,
@@ -337,6 +389,7 @@ impl Settings {
             formatting: shell.formatting,
             status_bar_visible: shell.status_bar_visible,
             opening: shell.opening,
+            language: shell.language,
             spell_check: shell.spell_check,
             page_setup: shell.page_setup.clone(),
         }
@@ -356,6 +409,7 @@ impl Settings {
         shell.formatting = self.formatting;
         shell.status_bar_visible = self.status_bar_visible;
         shell.opening = self.opening;
+        shell.language = self.language;
         shell.spell_check = self.spell_check;
         shell.page_setup = self.page_setup;
     }
@@ -375,6 +429,7 @@ impl Settings {
             u8::from(self.status_bar_visible)
         ));
         out.push_str(&format!("opening {}\n", opening_token(self.opening)));
+        out.push_str(&format!("language {}\n", language_token(self.language)));
         out.push_str(&format!("spell_check {}\n", u8::from(self.spell_check)));
         out.push_str(&format!("paper {}\n", self.page_setup.paper.label()));
         out.push_str(&format!(
@@ -430,6 +485,8 @@ impl Settings {
                     parse_bool(value).unwrap_or(defaults().status_bar_visible);
             } else if let Some(value) = line.strip_prefix("opening ") {
                 settings.opening = opening_from(value);
+            } else if let Some(value) = line.strip_prefix("language ") {
+                settings.language = language_from(value);
             } else if let Some(value) = line.strip_prefix("spell_check ") {
                 settings.spell_check = parse_bool(value).unwrap_or(defaults().spell_check);
             } else if let Some(value) = line.strip_prefix("paper ") {
@@ -479,6 +536,7 @@ fn defaults() -> Settings {
         formatting: true,
         status_bar_visible: true,
         opening: OpenBehavior::NewTab,
+        language: AppLanguage::English,
         spell_check: false,
         page_setup: nc_textproc::PageSetup::default(),
     }
@@ -602,6 +660,31 @@ fn opening_from(value: &str) -> OpenBehavior {
     }
 }
 
+/// The stored name of a language choice.
+fn language_token(language: AppLanguage) -> &'static str {
+    match language {
+        AppLanguage::English => "en",
+        AppLanguage::Portuguese => "pt",
+        AppLanguage::Spanish => "es",
+        AppLanguage::French => "fr",
+        AppLanguage::German => "de",
+        AppLanguage::Italian => "it",
+    }
+}
+
+/// Reads a language choice, defaulting when the name is not one this build offers.
+fn language_from(value: &str) -> AppLanguage {
+    match value {
+        "en" | "english" => AppLanguage::English,
+        "pt" | "portuguese" => AppLanguage::Portuguese,
+        "es" | "spanish" => AppLanguage::Spanish,
+        "fr" | "french" => AppLanguage::French,
+        "de" | "german" => AppLanguage::German,
+        "it" | "italian" => AppLanguage::Italian,
+        _ => defaults().language,
+    }
+}
+
 /// Reads a font family, which has to be one this build carries a face for.
 ///
 /// The families are a fixed list because the faces are embedded, not discovered: a name
@@ -697,6 +780,7 @@ mod tests {
             formatting: false,
             status_bar_visible: false,
             opening: OpenBehavior::ReplaceTab,
+            language: AppLanguage::English,
             spell_check: true,
             page_setup: nc_textproc::PageSetup::default(),
         };
@@ -710,6 +794,7 @@ mod tests {
              formatting 0\n\
              status_bar 0\n\
              opening replace_tab\n\
+             language en\n\
              spell_check 1\n\
              paper A4\n\
              orientation Portrait\n\
@@ -732,6 +817,7 @@ mod tests {
             formatting: true,
             status_bar_visible: true,
             opening: OpenBehavior::NewWindow,
+            language: AppLanguage::Portuguese,
             spell_check: true,
             page_setup: nc_textproc::PageSetup {
                 paper: nc_textproc::PaperSize::Letter,
@@ -760,7 +846,7 @@ mod tests {
         // itself rather than hiding behind the five that work.
         /// One setting, moved, with the label to name in a failure.
         type Change = (&'static str, fn(&mut Shell));
-        let changes: [Change; 9] = [
+        let changes: [Change; 10] = [
             ("theme", |shell| shell.theme = AppTheme::Dark),
             ("font", |shell| shell.font_family = "Fira Mono"),
             ("zoom", |shell| shell.zoom = 130),
@@ -770,6 +856,7 @@ mod tests {
             ("opening files", |shell| {
                 shell.opening = OpenBehavior::NewWindow
             }),
+            ("language", |shell| shell.language = AppLanguage::Portuguese),
             ("spell check", |shell| shell.spell_check = true),
             ("page setup", |shell| {
                 shell.page_setup.paper = nc_textproc::PaperSize::Legal;
@@ -884,7 +971,7 @@ mod tests {
                 .expect("the change was written")
                 .lines()
                 .count(),
-            17,
+            18,
             "the header, one line per setting, and the eight lines the page setup is made of"
         );
 

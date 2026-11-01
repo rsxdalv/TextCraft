@@ -12,6 +12,7 @@ mod desktop_tint;
 mod dialogs;
 mod editor;
 mod fonts;
+pub(crate) mod i18n;
 mod icons;
 mod input;
 /// The M6 acceptance suite. Test-only: it drives the shell's own state, which is

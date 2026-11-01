@@ -312,6 +312,42 @@ impl OpenBehavior {
     }
 }
 
+/// The application display language chosen in Settings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AppLanguage {
+    #[default]
+    English,
+    Portuguese,
+    Spanish,
+    French,
+    German,
+    Italian,
+}
+
+impl AppLanguage {
+    /// Every choice, in menu order.
+    pub const ALL: [AppLanguage; 6] = [
+        AppLanguage::English,
+        AppLanguage::Portuguese,
+        AppLanguage::Spanish,
+        AppLanguage::French,
+        AppLanguage::German,
+        AppLanguage::Italian,
+    ];
+
+    /// The label shown in the dropdown.
+    pub const fn label(self) -> &'static str {
+        match self {
+            AppLanguage::English => "English",
+            AppLanguage::Portuguese => "Português",
+            AppLanguage::Spanish => "Español",
+            AppLanguage::French => "Français",
+            AppLanguage::German => "Deutsch",
+            AppLanguage::Italian => "Italiano",
+        }
+    }
+}
+
 /// The Find and Replace dialog (`docs/ui-reference.md` §5).
 ///
 /// One dialog in two modes: **Find** shows the find row alone, **Replace** adds
@@ -1234,6 +1270,8 @@ pub struct Shell {
     pub editor_mode: EditorMode,
     /// Where opened files go.
     pub opening: OpenBehavior,
+    /// The application display language chosen in Settings.
+    pub language: AppLanguage,
     /// Whether likely misspellings are underlined and can be corrected
     /// (`Settings ▸ Spell check`, `NC-P004`). Off by default: the reference
     /// capture has no spell checker, so this is an addition and starts silent
@@ -1331,6 +1369,7 @@ impl Shell {
             font_search_filter: String::new(),
             editor_mode: EditorMode::Text,
             opening: OpenBehavior::NewTab,
+            language: AppLanguage::English,
             spell_check: false,
             spelling: SpellDialog::new(),
             ai_enabled: false,
