@@ -238,6 +238,48 @@ fn installed_key() -> egui::Id {
     egui::Id::new("textcraft-installed-font")
 }
 
+use std::collections::HashSet;
+use std::sync::Mutex;
+
+static LOADED_SYSTEM_FONTS: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+
+/// Whether `name` is already bound to a font family in this build or loaded from the system.
+pub fn is_font_bound(name: &str) -> bool {
+    if FAMILIES.contains(&name) {
+        return true;
+    }
+    if let Ok(guard) = LOADED_SYSTEM_FONTS.lock() {
+        if let Some(set) = guard.as_ref() {
+            return set.contains(name);
+        }
+    }
+    false
+}
+
+/// Ensures that `name` is registered and bound in this context's font definitions,
+/// loading system font file bytes on demand if needed. Returns `true` if available.
+pub fn ensure_font(ctx: &Context, name: &str) -> bool {
+    if is_font_bound(name) {
+        return true;
+    }
+    if let Some(sys) = system_fonts().iter().find(|f| f.name == name) {
+        if let Ok(_bytes) = std::fs::read(&sys.path) {
+            if let Ok(mut guard) = LOADED_SYSTEM_FONTS.lock() {
+                guard
+                    .get_or_insert_with(HashSet::new)
+                    .insert(name.to_owned());
+            }
+            let current = ctx
+                .data(|data| data.get_temp::<String>(installed_key()))
+                .unwrap_or_else(|| DEFAULT.to_owned());
+            ctx.data_mut(|data| data.remove_temp::<String>(installed_key()));
+            apply(ctx, &current);
+            return true;
+        }
+    }
+    false
+}
+
 /// Points the document face at `choice`, registering the shipped files the first time
 /// this context asks for one.
 pub fn apply(ctx: &Context, choice: &str) {
@@ -268,6 +310,24 @@ pub fn apply(ctx: &Context, choice: &str) {
             .insert(FontFamily::Name(family.into()), chain(family));
     }
 
+    // Also include any previously loaded system fonts!
+    if let Ok(guard) = LOADED_SYSTEM_FONTS.lock() {
+        if let Some(set) = guard.as_ref() {
+            for extra in set {
+                if let Some(sys) = system_fonts().iter().find(|f| f.name == extra.as_str()) {
+                    if let Ok(bytes) = std::fs::read(&sys.path) {
+                        fonts
+                            .font_data
+                            .insert(extra.clone(), FontData::from_owned(bytes).into());
+                        fonts
+                            .families
+                            .insert(FontFamily::Name(extra.clone().into()), chain(extra));
+                    }
+                }
+            }
+        }
+    }
+
     // If `wanted` is an operating system font, load its file bytes!
     if let Some(sys) = system_fonts().iter().find(|f| f.name == wanted) {
         if let Ok(bytes) = std::fs::read(&sys.path) {
@@ -277,6 +337,11 @@ pub fn apply(ctx: &Context, choice: &str) {
             fonts
                 .families
                 .insert(FontFamily::Name(wanted.into()), chain(wanted));
+            if let Ok(mut guard) = LOADED_SYSTEM_FONTS.lock() {
+                guard
+                    .get_or_insert_with(HashSet::new)
+                    .insert(wanted.to_owned());
+            }
         }
     }
 

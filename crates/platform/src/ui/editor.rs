@@ -360,7 +360,7 @@ fn is_code_keyword(word: &str) -> bool {
 }
 
 /// Visual styling accumulated for a run of visible characters in [`EditorMode::Text`].
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 struct RichStyle {
     bold: bool,
     italic: bool,
@@ -371,7 +371,10 @@ struct RichStyle {
     link: bool,
     dim: bool,
     color: Option<[u8; 3]>,
+    font_family: Option<String>,
+    font_size: Option<f32>,
     scale: f32,
+    is_image: bool,
 }
 
 impl Default for RichStyle {
@@ -386,7 +389,10 @@ impl Default for RichStyle {
             link: false,
             dim: false,
             color: None,
+            font_family: None,
+            font_size: None,
             scale: 1.0,
+            is_image: false,
         }
     }
 }
@@ -396,6 +402,14 @@ impl Default for RichStyle {
 struct RichRun {
     vis_range: Range<usize>,
     style: RichStyle,
+}
+
+/// An embedded image parsed in [`EditorMode::Text`].
+#[derive(Clone, Debug, PartialEq)]
+struct RichImageItem {
+    vis_range: Range<usize>,
+    alt: String,
+    url: String,
 }
 
 /// Line-level style modifier (`> ` blockquote or `# `..`###### ` heading) active for
@@ -412,7 +426,7 @@ struct LineStyleMod {
 /// tag-free visible string displayed in [`EditorMode::Text`].
 #[derive(Clone, Debug, Default)]
 struct RichProjection {
-    /// Visible text with inline tags/markers (`<span style="color: ...">`, `**`, `*`,
+    /// Visible text with inline tags/markers (`<span style="...">`, `**`, `*`,
     /// `<u>`, `~~`, `==`, `` ` ``, `# `) stripped, including across multi-line spans.
     visible: String,
     /// For each character in `visible`, the start byte offset in `source`.
@@ -424,6 +438,8 @@ struct RichProjection {
     /// `(visible_char_index, source_byte_offset)` pairs for empty formatting wrappers
     /// or empty heading prefixes so typing at that caret inserts inside the wrapper.
     empty_anchors: Vec<(usize, usize)>,
+    /// Embedded images to render visually in the editor.
+    images: Vec<RichImageItem>,
     /// Byte length of the underlying `source`.
     source_len: usize,
     /// Whether the parser is currently positioned at the start of a line (before any
@@ -444,6 +460,7 @@ impl RichProjection {
             vis_to_src_end: Vec::with_capacity(source.len()),
             runs: Vec::new(),
             empty_anchors: Vec::new(),
+            images: Vec::new(),
             source_len: source.len(),
             at_line_start: true,
             line_prefix_consumed: false,
@@ -526,12 +543,20 @@ impl RichProjection {
 
             let s = &source[i..range.end];
 
-            // 1. `<span style="color: #RRGGBB">...</span>` (single-line or multi-line!)
-            if let Some((open_len, inner_len, close_len, rgb)) = match_color_span(s) {
+            // 1. `<span style="...">...</span>` (single-line or multi-line!)
+            if let Some((open_len, inner_len, close_len, parsed)) = match_style_span(s) {
                 let inner_start = i + open_len;
                 let inner_end = inner_start + inner_len;
-                let mut inner_style = style;
-                inner_style.color = Some(rgb);
+                let mut inner_style = style.clone();
+                if let Some(rgb) = parsed.color {
+                    inner_style.color = Some(rgb);
+                }
+                if let Some(fam) = parsed.font_family {
+                    inner_style.font_family = Some(fam);
+                }
+                if let Some(sz) = parsed.font_size {
+                    inner_style.font_size = Some(sz);
+                }
                 if inner_start == inner_end {
                     self.empty_anchors
                         .push((self.vis_to_src_start.len(), inner_start));
@@ -542,9 +567,17 @@ impl RichProjection {
                 continue;
             }
 
-            // Stray/unclosed `<span style="color: #RRGGBB">` or `</span>`: hide tag and apply colour.
-            if let Some((open_len, rgb)) = match_open_color_tag(s) {
-                style.color = Some(rgb);
+            // Stray/unclosed `<span style="...">` or `</span>`: hide tag and apply styles.
+            if let Some((open_len, parsed)) = match_open_style_tag(s) {
+                if let Some(rgb) = parsed.color {
+                    style.color = Some(rgb);
+                }
+                if let Some(fam) = parsed.font_family {
+                    style.font_family = Some(fam);
+                }
+                if let Some(sz) = parsed.font_size {
+                    style.font_size = Some(sz);
+                }
                 i += open_len;
                 continue;
             }
@@ -557,7 +590,7 @@ impl RichProjection {
             if let Some((open_len, inner_len, close_len)) = match_delimited(s, "<u>", "</u>") {
                 let inner_start = i + open_len;
                 let inner_end = inner_start + inner_len;
-                let mut inner_style = style;
+                let mut inner_style = style.clone();
                 inner_style.underline = true;
                 if inner_start == inner_end {
                     self.empty_anchors
@@ -583,7 +616,7 @@ impl RichProjection {
             if let Some((open_len, inner_len, close_len)) = match_delimited(s, "**", "**") {
                 let inner_start = i + open_len;
                 let inner_end = inner_start + inner_len;
-                let mut inner_style = style;
+                let mut inner_style = style.clone();
                 inner_style.bold = true;
                 if inner_start == inner_end {
                     self.empty_anchors
@@ -599,7 +632,7 @@ impl RichProjection {
             if let Some((open_len, inner_len, close_len)) = match_delimited(s, "~~", "~~") {
                 let inner_start = i + open_len;
                 let inner_end = inner_start + inner_len;
-                let mut inner_style = style;
+                let mut inner_style = style.clone();
                 inner_style.strike = true;
                 if inner_start == inner_end {
                     self.empty_anchors
@@ -615,7 +648,7 @@ impl RichProjection {
             if let Some((open_len, inner_len, close_len)) = match_delimited(s, "==", "==") {
                 let inner_start = i + open_len;
                 let inner_end = inner_start + inner_len;
-                let mut inner_style = style;
+                let mut inner_style = style.clone();
                 inner_style.highlight = true;
                 if inner_start == inner_end {
                     self.empty_anchors
@@ -632,7 +665,7 @@ impl RichProjection {
                 if let Some((open_len, inner_len, close_len)) = match_delimited(s, "`", "`") {
                     let inner_start = i + open_len;
                     let inner_end = inner_start + inner_len;
-                    let mut inner_style = style;
+                    let mut inner_style = style.clone();
                     inner_style.code = true;
                     if inner_start == inner_end {
                         self.empty_anchors
@@ -640,7 +673,7 @@ impl RichProjection {
                     } else {
                         for (rel, ch) in source[inner_start..inner_end].char_indices() {
                             let b0 = inner_start + rel;
-                            self.push_char(ch, b0, b0 + ch.len_utf8(), inner_style);
+                            self.push_char(ch, b0, b0 + ch.len_utf8(), inner_style.clone());
                         }
                     }
                     i = inner_end + close_len;
@@ -657,7 +690,7 @@ impl RichProjection {
                 if let Some(close_rel) = find_single_asterisk_close(&s[1..]) {
                     let inner_start = i + 1;
                     let inner_end = inner_start + close_rel;
-                    let mut inner_style = style;
+                    let mut inner_style = style.clone();
                     inner_style.italic = true;
                     if inner_start == inner_end {
                         self.empty_anchors
@@ -670,17 +703,62 @@ impl RichProjection {
                 }
             }
 
-            // 8. `[label](url)` link
+            // 8. `![alt](url)` image
+            if s.starts_with("![") {
+                if let Some((alt_len, total_len)) = match_markdown_image(s) {
+                    let inner_start = i + 2;
+                    let inner_end = inner_start + alt_len;
+                    let alt_text = &source[inner_start..inner_end];
+                    let url_start = inner_end + 2;
+                    let url_end = i + total_len - 1;
+                    let url_text = &source[url_start..url_end];
+
+                    let mut inner_style = style.clone();
+                    inner_style.dim = true;
+                    inner_style.is_image = true;
+
+                    let vis_start = self.visible.len();
+                    let display_str = if alt_text.is_empty() {
+                        "🖼️ [image]\n".to_string()
+                    } else {
+                        format!("🖼️ [{alt_text}]\n")
+                    };
+                    for ch in display_str.chars() {
+                        self.push_char(ch, i, i + total_len, inner_style.clone());
+                    }
+                    let vis_end = self.visible.len();
+
+                    self.images.push(RichImageItem {
+                        vis_range: vis_start..vis_end,
+                        alt: alt_text.to_string(),
+                        url: url_text.to_string(),
+                    });
+
+                    i += total_len;
+                    continue;
+                }
+            }
+
+            // 9. `[label](url)` link
             if s.starts_with('[') {
                 if let Some((label_len, total_len)) = match_markdown_link(s) {
                     let inner_start = i + 1;
                     let inner_end = inner_start + label_len;
-                    let mut inner_style = style;
+                    let mut inner_style = style.clone();
                     inner_style.link = true;
                     inner_style.underline = true;
                     if inner_start == inner_end {
-                        self.empty_anchors
-                            .push((self.vis_to_src_start.len(), inner_start));
+                        let url_start = i + 1 + label_len + 2;
+                        let url_end = i + total_len - 1;
+                        let url_text = &source[url_start..url_end];
+                        let display_str = if url_text.is_empty() {
+                            "🔗 [link]".to_string()
+                        } else {
+                            format!("🔗 [{url_text}]")
+                        };
+                        for ch in display_str.chars() {
+                            self.push_char(ch, i, i + total_len, inner_style.clone());
+                        }
                     } else {
                         self.parse_segment(source, inner_start..inner_end, inner_style);
                     }
@@ -691,7 +769,7 @@ impl RichProjection {
 
             let ch = s.chars().next().unwrap_or(' ');
             let len = ch.len_utf8();
-            self.push_char(ch, i, i + len, style);
+            self.push_char(ch, i, i + len, style.clone());
             i += len;
         }
     }
@@ -826,18 +904,54 @@ impl RichProjection {
     }
 }
 
-fn match_color_span(s: &str) -> Option<(usize, usize, usize, [u8; 3])> {
-    const PREFIX: &str = "<span style=\"color: ";
+#[derive(Clone, Debug, Default, PartialEq)]
+struct ParsedSpanStyle {
+    color: Option<[u8; 3]>,
+    font_family: Option<String>,
+    font_size: Option<f32>,
+}
+
+fn parse_css_style(style_str: &str) -> ParsedSpanStyle {
+    let mut parsed = ParsedSpanStyle::default();
+    for declaration in style_str.split(';') {
+        let decl = declaration.trim();
+        if decl.is_empty() {
+            continue;
+        }
+        if let Some((prop, val)) = decl.split_once(':') {
+            let prop = prop.trim();
+            let val = val.trim();
+            if prop.eq_ignore_ascii_case("color") {
+                parsed.color = parse_hex_color(val);
+            } else if prop.eq_ignore_ascii_case("font-family") {
+                let unquoted = val.trim_matches(|c| c == '\'' || c == '"' || c == ' ');
+                if !unquoted.is_empty() {
+                    parsed.font_family = Some(unquoted.to_string());
+                }
+            } else if prop.eq_ignore_ascii_case("font-size") {
+                let num_str = val.trim_end_matches("px").trim_end_matches("pt").trim();
+                if let Ok(sz) = num_str.parse::<f32>() {
+                    parsed.font_size = Some(sz);
+                }
+            }
+        }
+    }
+    parsed
+}
+
+fn match_style_span(s: &str) -> Option<(usize, usize, usize, ParsedSpanStyle)> {
+    const PREFIX: &str = "<span style=\"";
     const CLOSE: &str = "</span>";
     if !s.starts_with(PREFIX) {
         return None;
     }
     let after_prefix = &s[PREFIX.len()..];
     let quote_gt = after_prefix.find("\">")?;
-    let rgb = parse_hex_color(&after_prefix[..quote_gt])?;
+    let style_str = &after_prefix[..quote_gt];
+    let parsed = parse_css_style(style_str);
     let open_len = PREFIX.len() + quote_gt + 2;
 
-    // Find the matching `</span>`, accounting for nested `<span style="color: ...">` tags.
+    // Find the matching `</span>`, accounting for nested `<span style="...">` tags.
     let rest = &s[open_len..];
     let mut depth = 1usize;
     let mut pos = 0usize;
@@ -848,7 +962,7 @@ fn match_color_span(s: &str) -> Option<(usize, usize, usize, [u8; 3])> {
         } else if rest[pos..].starts_with(CLOSE) {
             depth -= 1;
             if depth == 0 {
-                return Some((open_len, pos, CLOSE.len(), rgb));
+                return Some((open_len, pos, CLOSE.len(), parsed));
             }
             pos += CLOSE.len();
         } else {
@@ -859,15 +973,15 @@ fn match_color_span(s: &str) -> Option<(usize, usize, usize, [u8; 3])> {
     None
 }
 
-fn match_open_color_tag(s: &str) -> Option<(usize, [u8; 3])> {
-    const PREFIX: &str = "<span style=\"color: ";
+fn match_open_style_tag(s: &str) -> Option<(usize, ParsedSpanStyle)> {
+    const PREFIX: &str = "<span style=\"";
     if !s.starts_with(PREFIX) {
         return None;
     }
     let after_prefix = &s[PREFIX.len()..];
     let quote_gt = after_prefix.find("\">")?;
-    let rgb = parse_hex_color(&after_prefix[..quote_gt])?;
-    Some((PREFIX.len() + quote_gt + 2, rgb))
+    let parsed = parse_css_style(&after_prefix[..quote_gt]);
+    Some((PREFIX.len() + quote_gt + 2, parsed))
 }
 
 fn parse_hex_color(raw: &str) -> Option<[u8; 3]> {
@@ -917,8 +1031,19 @@ fn match_markdown_link(s: &str) -> Option<(usize, usize)> {
     Some((mid, 1 + mid + 2 + close + 1))
 }
 
+fn match_markdown_image(s: &str) -> Option<(usize, usize)> {
+    if !s.starts_with("![") {
+        return None;
+    }
+    let rest = &s[2..];
+    let mid = rest.find("](")?;
+    let after_mid = &rest[mid + 2..];
+    let close = after_mid.find(')')?;
+    Some((mid, 2 + mid + 2 + close + 1))
+}
+
 /// Removes empty inline formatting wrappers (`****`, `<u></u>`, `~~~~`, `====`,
-/// ```` `` ````, `<span style="color: #RRGGBB"></span>`) left behind when the last
+/// ```` `` ````, `<span style="..."></span>`) left behind when the last
 /// visible character inside a formatted word is deleted in [`EditorMode::Text`].
 fn cleanup_empty_wrappers(text: &mut String) {
     loop {
@@ -928,7 +1053,7 @@ fn cleanup_empty_wrappers(text: &mut String) {
                 *text = text.replace(pat, "");
             }
         }
-        while let Some(range) = find_empty_color_span(text) {
+        while let Some(range) = find_empty_style_span(text) {
             text.replace_range(range, "");
         }
         if text.len() == before {
@@ -937,18 +1062,16 @@ fn cleanup_empty_wrappers(text: &mut String) {
     }
 }
 
-fn find_empty_color_span(text: &str) -> Option<Range<usize>> {
-    const PREFIX: &str = "<span style=\"color: ";
+fn find_empty_style_span(text: &str) -> Option<Range<usize>> {
+    const PREFIX: &str = "<span style=\"";
     const EMPTY_TAIL: &str = "\"></span>";
     let mut search_from = 0usize;
     while let Some(rel) = text[search_from..].find(PREFIX) {
         let start = search_from + rel;
         let after = start + PREFIX.len();
         if let Some(tail_rel) = text[after..].find(EMPTY_TAIL) {
-            if parse_hex_color(&text[after..after + tail_rel]).is_some() {
-                let end = after + tail_rel + EMPTY_TAIL.len();
-                return Some(start..end);
-            }
+            let end = after + tail_rel + EMPTY_TAIL.len();
+            return Some(start..end);
         }
         search_from = after;
     }
@@ -956,8 +1079,8 @@ fn find_empty_color_span(text: &str) -> Option<Range<usize>> {
 }
 
 /// Lays out `text` (`projection.visible`) for [`EditorMode::Text`] with visual styles
-/// (font scaling for headings, custom text colours, highlight background, italics,
-/// underline, strikethrough, inline code chip, and link styling).
+/// (font scaling for headings, custom text colours, custom font-family and font-size,
+/// highlight background, italics, underline, strikethrough, inline code chip, and link styling).
 fn layout_rich_text(
     ui: &egui::Ui,
     text: &str,
@@ -988,8 +1111,23 @@ fn layout_rich_text(
 
     for run in &projection.runs {
         let slice = &text[run.vis_range.clone()];
-        let s = run.style;
-        let font_id = FontId::new(base_font.size * s.scale, base_font.family.clone());
+        let s = &run.style;
+        let family = if let Some(ref fam) = s.font_family {
+            if crate::ui::fonts::is_font_bound(fam) || crate::ui::fonts::ensure_font(ui.ctx(), fam)
+            {
+                egui::FontFamily::Name(fam.clone().into())
+            } else {
+                base_font.family.clone()
+            }
+        } else {
+            base_font.family.clone()
+        };
+        let size = if let Some(sz) = s.font_size {
+            sz * (base_font.size / 14.0)
+        } else {
+            base_font.size * s.scale
+        };
+        let font_id = FontId::new(size, family);
         let fg = if let Some([r, g, b]) = s.color {
             Color32::from_rgb(r, g, b)
         } else if s.link || s.code {
@@ -1011,6 +1149,10 @@ fn layout_rich_text(
             format.background = highlight_bg;
         } else if s.code {
             format.background = palette.chrome;
+        }
+        if s.is_image {
+            format.line_height = Some(180.0);
+            format.color = Color32::TRANSPARENT;
         }
         job.append(slice, 0.0, format);
     }
@@ -1036,8 +1178,23 @@ fn paint_rich_bold_pass(
 
     for run in &projection.runs {
         let slice = &projection.visible[run.vis_range.clone()];
-        let s = run.style;
-        let font_id = FontId::new(base_font.size * s.scale, base_font.family.clone());
+        let s = &run.style;
+        let family = if let Some(ref fam) = s.font_family {
+            if crate::ui::fonts::is_font_bound(fam) || crate::ui::fonts::ensure_font(ui.ctx(), fam)
+            {
+                egui::FontFamily::Name(fam.clone().into())
+            } else {
+                base_font.family.clone()
+            }
+        } else {
+            base_font.family.clone()
+        };
+        let size = if let Some(sz) = s.font_size {
+            sz * (base_font.size / 14.0)
+        } else {
+            base_font.size * s.scale
+        };
+        let font_id = FontId::new(size, family);
         let fg = if s.bold {
             if let Some([r, g, b]) = s.color {
                 Color32::from_rgb(r, g, b)
@@ -1062,6 +1219,66 @@ fn paint_rich_bold_pass(
         bold_galley,
         Color32::TRANSPARENT,
     );
+}
+
+/// Paints rendered pictures for embedded Markdown images in [`EditorMode::Text`].
+fn paint_rich_images(
+    ui: &egui::Ui,
+    output: &egui::text_edit::TextEditOutput,
+    projection: &RichProjection,
+    palette: crate::ui::theme::Palette,
+) {
+    if projection.images.is_empty() || projection.visible.is_empty() {
+        return;
+    }
+    let shift = output.galley_pos.to_vec2() - egui::vec2(output.galley.rect.left(), 0.0);
+    let painter = ui.painter();
+
+    for img in &projection.images {
+        let ccursor = egui::text::CCursor::new(img.vis_range.start);
+        let rcursor = output.galley.layout_from_cursor(ccursor);
+        let Some(placed) = output.galley.rows.get(rcursor.row) else {
+            continue;
+        };
+        let row_rect = placed.rect().translate(shift);
+        let card_height = (row_rect.height() - 8.0).clamp(120.0, 172.0);
+        let card_top = row_rect.top() + 4.0;
+        let card_width = 300.0f32.min(ui.available_width() - 32.0);
+        let card_rect = egui::Rect::from_min_size(
+            egui::pos2(row_rect.left(), card_top),
+            egui::vec2(card_width, card_height),
+        );
+
+        // Container card
+        painter.rect_filled(card_rect, egui::CornerRadius::same(6), palette.card);
+        painter.rect_stroke(
+            card_rect,
+            egui::CornerRadius::same(6),
+            egui::Stroke::new(1.0, palette.border),
+            egui::StrokeKind::Inside,
+        );
+
+        // Image
+        let uri = normalize_image_uri(&img.url);
+        let img_rect = card_rect.shrink(4.0);
+        egui::Image::new(&uri)
+            .fit_to_exact_size(img_rect.size())
+            .corner_radius(egui::CornerRadius::same(4))
+            .paint_at(ui, img_rect);
+    }
+}
+
+pub(crate) fn normalize_image_uri(path_or_url: &str) -> String {
+    let trimmed = path_or_url.trim();
+    if trimmed.starts_with("http://")
+        || trimmed.starts_with("https://")
+        || trimmed.starts_with("file://")
+        || trimmed.starts_with("bytes://")
+    {
+        trimmed.to_string()
+    } else {
+        format!("file://{trimmed}")
+    }
 }
 
 /// Draws the editor for the active tab, updates the caret position, and applies
@@ -1155,7 +1372,7 @@ fn rich_text_view(
     let wrap = shell.word_wrap;
     let spell_check = shell.spell_check;
     let zoom = shell.zoom as f32 / 100.0;
-    let font = FontId::monospace(EDIT_FONT_SIZE * zoom);
+    let font = FontId::monospace((shell.base_font_size as f32) * zoom);
     let initial_proj = RichProjection::build(shell.tabs[index].text());
     let natural = if wrap {
         0.0
@@ -1202,6 +1419,7 @@ fn rich_text_view(
 
             let projection = buffer.projection;
             paint_rich_bold_pass(ui, &output, &projection, &font, palette);
+            paint_rich_images(ui, &output, &projection, palette);
 
             a11y::label(&output.response, WidgetType::TextEdit, &title);
 
@@ -2077,5 +2295,29 @@ mod tests {
         assert_eq!(byte_index(text, 3), 6);
         assert_eq!(byte_index(text, 4), 7);
         assert_eq!(byte_index(text, 99), 7);
+    }
+
+    #[test]
+    fn rich_projection_parses_font_family_and_font_size_spans() {
+        let src = "Normal <span style=\"font-family: 'Fira Mono'; font-size: 18px\">Custom Text</span> End";
+        let proj = RichProjection::build(src);
+        assert_eq!(proj.visible, "Normal Custom Text End");
+        let custom_run = proj
+            .runs
+            .iter()
+            .find(|r| &proj.visible[r.vis_range.clone()] == "Custom Text")
+            .expect("Custom Text run");
+        assert_eq!(custom_run.style.font_family.as_deref(), Some("Fira Mono"));
+        assert_eq!(custom_run.style.font_size, Some(18.0));
+    }
+
+    #[test]
+    fn rich_projection_records_images_and_reserves_block_line() {
+        let src = "Text before\n![My Alt Text](https://example.com/pic.png)\nText after";
+        let proj = RichProjection::build(src);
+        assert!(proj.visible.contains("🖼️ [My Alt Text]\n"));
+        assert_eq!(proj.images.len(), 1);
+        assert_eq!(proj.images[0].alt, "My Alt Text");
+        assert_eq!(proj.images[0].url, "https://example.com/pic.png");
     }
 }

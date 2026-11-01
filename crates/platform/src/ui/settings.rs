@@ -208,6 +208,7 @@ fn dropdown<T: MenuOption>(ui: &mut egui::Ui, id: &str, name: &str, selected: &m
 /// The font-family dropdown.
 fn font_dropdown(ui: &mut egui::Ui, shell: &mut Shell) {
     let combo = egui::ComboBox::from_id_salt("font")
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .selected_text(shell.font_family)
         .width(200.0)
         .show_ui(ui, |ui| {

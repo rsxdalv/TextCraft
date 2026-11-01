@@ -463,6 +463,82 @@ impl Default for SpellDialog {
     }
 }
 
+/// The Insert Link dialog.
+pub struct LinkDialog {
+    /// Whether the dialog is on screen.
+    pub open: bool,
+    /// The link display text / label.
+    pub text: String,
+    /// The link target URL.
+    pub url: String,
+    /// Set when the dialog opens so its text field takes focus once.
+    pub focus: bool,
+}
+
+impl LinkDialog {
+    /// A closed dialog with defaults.
+    pub fn new() -> Self {
+        Self {
+            open: false,
+            text: String::new(),
+            url: "https://".to_string(),
+            focus: false,
+        }
+    }
+
+    /// Opens the dialog pre-filling `text`.
+    pub fn open(&mut self, text: String) {
+        self.open = true;
+        self.text = text;
+        self.url = "https://".to_string();
+        self.focus = true;
+    }
+}
+
+impl Default for LinkDialog {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The Insert Image dialog.
+pub struct ImageDialog {
+    /// Whether the dialog is on screen.
+    pub open: bool,
+    /// The image alt text description.
+    pub alt: String,
+    /// The image path or web URL.
+    pub path_or_url: String,
+    /// Set when the dialog opens so its path/url field takes focus once.
+    pub focus: bool,
+}
+
+impl ImageDialog {
+    /// A closed dialog with defaults.
+    pub fn new() -> Self {
+        Self {
+            open: false,
+            alt: String::new(),
+            path_or_url: String::new(),
+            focus: false,
+        }
+    }
+
+    /// Opens the dialog pre-filling `alt`.
+    pub fn open(&mut self, alt: String) {
+        self.open = true;
+        self.alt = alt;
+        self.path_or_url = String::new();
+        self.focus = true;
+    }
+}
+
+impl Default for ImageDialog {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Which file dialog is open (`docs/ui-reference.md` §7).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileDialogMode {
@@ -1146,6 +1222,8 @@ pub struct Shell {
     /// The document font family, one of the names in [`crate::ui::fonts`] — each of
     /// which this build ships a face for.
     pub font_family: &'static str,
+    /// Base document font size in pixels (default 14px).
+    pub base_font_size: u32,
     /// The active colour selected in the formatting toolbar's text-colour picker.
     pub text_color: TextColor,
     /// Custom colour RGB components selected in the text colour popover picker.
@@ -1181,6 +1259,10 @@ pub struct Shell {
     pub find: FindDialog,
     /// The Go to line dialog.
     pub go_to: GoToDialog,
+    /// The Insert Link dialog.
+    pub link_dialog: LinkDialog,
+    /// The Insert Image dialog.
+    pub image_dialog: ImageDialog,
     /// The page the printer marks (`File ▸ Page setup`, `NC-F007`, §8). Stored and
     /// restored like the settings beside it, and read by `File ▸ Print`.
     pub page_setup: nc_textproc::PageSetup,
@@ -1243,6 +1325,7 @@ impl Shell {
             theme: AppTheme::Light,
             palette: Palette::LIGHT,
             font_family: crate::ui::fonts::DEFAULT,
+            base_font_size: 14,
             text_color: TextColor::Crimson,
             custom_color_rgb: [0xE8, 0x59, 0x0C],
             font_search_filter: String::new(),
@@ -1258,6 +1341,8 @@ impl Shell {
             notification: None,
             find: FindDialog::new(),
             go_to: GoToDialog::new(),
+            link_dialog: LinkDialog::new(),
+            image_dialog: ImageDialog::new(),
             page_setup: nc_textproc::PageSetup::default(),
             page_setup_dialog: PageSetupDialog::new(),
             file_dialog: None,

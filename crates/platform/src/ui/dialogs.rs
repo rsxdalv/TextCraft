@@ -24,6 +24,12 @@ pub fn show(shell: &mut Shell, ctx: &Context) {
     if shell.go_to.open {
         go_to(shell, ctx);
     }
+    if shell.link_dialog.open {
+        link(shell, ctx);
+    }
+    if shell.image_dialog.open {
+        image(shell, ctx);
+    }
     if shell.page_setup_dialog.open {
         page_setup(shell, ctx);
     }
@@ -678,4 +684,172 @@ fn file_name(path: &std::path::Path) -> String {
     path.file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.display().to_string())
+}
+
+/// The Insert Link dialog.
+fn link(shell: &mut Shell, ctx: &Context) {
+    let mut open = shell.link_dialog.open;
+    let mut insert = false;
+    let mut cancel = false;
+    egui::Window::new("Insert Link")
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+        .show(ctx, |ui| {
+            ui.set_min_width(340.0);
+            egui::Grid::new("link_dialog_grid")
+                .num_columns(2)
+                .spacing([12.0, 10.0])
+                .show(ui, |ui| {
+                    ui.label("Text to display:");
+                    let text_resp = ui.add(
+                        egui::TextEdit::singleline(&mut shell.link_dialog.text)
+                            .id(egui::Id::new("link_dialog_text"))
+                            .desired_width(220.0),
+                    );
+                    a11y::label(&text_resp, WidgetType::TextEdit, "Text to display");
+
+                    ui.end_row();
+
+                    ui.label("Link URL:");
+                    let url_resp = ui.add(
+                        egui::TextEdit::singleline(&mut shell.link_dialog.url)
+                            .id(egui::Id::new("link_dialog_url"))
+                            .desired_width(220.0),
+                    );
+                    a11y::label(&url_resp, WidgetType::TextEdit, "Link URL");
+                    if shell.link_dialog.focus {
+                        if shell.link_dialog.text.is_empty() {
+                            text_resp.request_focus();
+                        } else {
+                            url_resp.request_focus();
+                        }
+                        shell.link_dialog.focus = false;
+                    }
+                    if url_resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                        insert = true;
+                    }
+                    ui.end_row();
+                });
+
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(4.0);
+
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("Cancel").clicked() {
+                        cancel = true;
+                    }
+                    if ui.button("Insert").clicked() {
+                        insert = true;
+                    }
+                });
+            });
+        });
+
+    if !open || cancel || ctx.input(|i| i.key_pressed(Key::Escape)) {
+        shell.link_dialog.open = false;
+    }
+
+    if insert {
+        let label = shell.link_dialog.text.clone();
+        let url = shell.link_dialog.url.trim().to_string();
+        shell.link_dialog.open = false;
+        actions::apply_custom_link(shell, &label, &url);
+    }
+}
+
+/// The Insert Image dialog.
+fn image(shell: &mut Shell, ctx: &Context) {
+    let mut open = shell.image_dialog.open;
+    let mut insert = false;
+    let mut cancel = false;
+    let mut browse = false;
+    egui::Window::new("Insert Image")
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+        .show(ctx, |ui| {
+            ui.set_min_width(380.0);
+            egui::Grid::new("image_dialog_grid")
+                .num_columns(2)
+                .spacing([12.0, 10.0])
+                .show(ui, |ui| {
+                    ui.label("Alt text:");
+                    let alt_resp = ui.add(
+                        egui::TextEdit::singleline(&mut shell.image_dialog.alt)
+                            .id(egui::Id::new("image_dialog_alt"))
+                            .desired_width(240.0),
+                    );
+                    a11y::label(&alt_resp, WidgetType::TextEdit, "Alt text");
+
+                    ui.end_row();
+
+                    ui.label("Path or URL:");
+                    ui.horizontal(|ui| {
+                        let path_resp = ui.add(
+                            egui::TextEdit::singleline(&mut shell.image_dialog.path_or_url)
+                                .id(egui::Id::new("image_dialog_path"))
+                                .desired_width(170.0),
+                        );
+                        a11y::label(&path_resp, WidgetType::TextEdit, "Path or URL");
+                        if shell.image_dialog.focus {
+                            if shell.image_dialog.alt.is_empty() {
+                                alt_resp.request_focus();
+                            } else {
+                                path_resp.request_focus();
+                            }
+                            shell.image_dialog.focus = false;
+                        }
+                        if path_resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                            insert = true;
+                        }
+                        if ui.button("Browse...").clicked() {
+                            browse = true;
+                        }
+                    });
+                    ui.end_row();
+                });
+
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(4.0);
+
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("Cancel").clicked() {
+                        cancel = true;
+                    }
+                    if ui.button("Insert").clicked() {
+                        insert = true;
+                    }
+                });
+            });
+        });
+
+    if browse {
+        if let Some(path) = rfd::FileDialog::new()
+            .add_filter(
+                "Images",
+                &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"],
+            )
+            .pick_file()
+        {
+            shell.image_dialog.path_or_url = path.to_string_lossy().into_owned();
+        }
+    }
+
+    if !open || cancel || ctx.input(|i| i.key_pressed(Key::Escape)) {
+        shell.image_dialog.open = false;
+    }
+
+    if insert {
+        let alt = shell.image_dialog.alt.clone();
+        let path_or_url = shell.image_dialog.path_or_url.trim().to_string();
+        shell.image_dialog.open = false;
+        actions::apply_custom_image(shell, &alt, &path_or_url);
+    }
 }

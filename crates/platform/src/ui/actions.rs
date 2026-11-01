@@ -128,14 +128,24 @@ pub fn run(shell: &mut Shell, ctx: &Context, id: CommandId) {
         "cmd.md.quote" => apply_format(shell, nc_markdown::toggle_quote),
         "cmd.md.code" => apply_format(shell, nc_markdown::toggle_code),
         "cmd.md.hr" => apply_format(shell, nc_markdown::insert_horizontal_rule),
-        "cmd.md.image" => apply_format(shell, |text, selection| {
-            nc_markdown::insert_image(text, selection, "")
-        }),
-        "cmd.md.link" => apply_format(shell, |text, selection| {
-            // The URL prompt is not built yet, so the command writes the syntax
-            // and leaves the caret between the parentheses to type into.
-            nc_markdown::insert_link(text, selection, "")
-        }),
+        "cmd.md.image" => {
+            if shell.native_dialogs {
+                open_image_dialog(shell);
+            } else {
+                apply_format(shell, |text, selection| {
+                    nc_markdown::insert_image(text, selection, "")
+                });
+            }
+        }
+        "cmd.md.link" => {
+            if shell.native_dialogs {
+                open_link_dialog(shell);
+            } else {
+                apply_format(shell, |text, selection| {
+                    nc_markdown::insert_link(text, selection, "")
+                });
+            }
+        }
         "cmd.md.table" => apply_format(shell, |text, selection| {
             // One command, both halves of NC-M008: inside a table it grows a row,
             // anywhere else it writes a new one. There is no size or direction
@@ -629,6 +639,227 @@ pub fn open_go_to(shell: &mut Shell) {
     shell.go_to.line = shell.line.to_string();
     shell.go_to.open = true;
     shell.go_to.focus = true;
+}
+
+/// Opens the Insert Link dialog.
+pub fn open_link_dialog(shell: &mut Shell) {
+    let selected_text = shell
+        .active_tab()
+        .and_then(|tab| {
+            let text = tab.text();
+            let sel = tab.document().selection();
+            if sel.is_empty() {
+                None
+            } else {
+                text.get(sel.start()..sel.end()).map(str::to_string)
+            }
+        })
+        .unwrap_or_default();
+    shell.link_dialog.open(selected_text);
+}
+
+/// Opens the Insert Image dialog.
+pub fn open_image_dialog(shell: &mut Shell) {
+    let selected_alt = shell
+        .active_tab()
+        .and_then(|tab| {
+            let text = tab.text();
+            let sel = tab.document().selection();
+            if sel.is_empty() {
+                None
+            } else {
+                text.get(sel.start()..sel.end()).map(str::to_string)
+            }
+        })
+        .unwrap_or_default();
+    shell.image_dialog.open(selected_alt);
+}
+
+/// Inserts a Markdown link `[label](url)` at the selection/caret.
+pub fn apply_custom_link(shell: &mut Shell, label: &str, url: &str) {
+    let written = format!("[{label}]({url})");
+    apply_format(shell, |text, selection| {
+        let patches = [nc_markdown::Patch {
+            at: selection,
+            with: written,
+        }];
+        Some(nc_markdown::apply(text, &patches, selection))
+    });
+}
+
+/// Inserts a Markdown image `![alt](path_or_url)` at the selection/caret.
+pub fn apply_custom_image(shell: &mut Shell, alt: &str, path_or_url: &str) {
+    let written = format!("![{alt}]({path_or_url})");
+    apply_format(shell, |text, selection| {
+        let patches = [nc_markdown::Patch {
+            at: selection,
+            with: written,
+        }];
+        Some(nc_markdown::apply(text, &patches, selection))
+    });
+}
+
+/// Finds the CSS style property value at `pos` by searching enclosing `<span style="...">` tags.
+fn find_style_prop_at(text: &str, pos: usize, prop_name: &str) -> Option<String> {
+    if let Some(after) = text.get(pos..)?.strip_prefix("<span style=\"") {
+        if let Some(quote_gt) = after.find("\">") {
+            let style_str = &after[..quote_gt];
+            for decl in style_str.split(';') {
+                if let Some((p, v)) = decl.trim().split_once(':') {
+                    if p.trim().eq_ignore_ascii_case(prop_name) {
+                        return Some(v.trim().to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    let mut check_pos = pos;
+    for _ in 0..6 {
+        let before = text.get(..check_pos)?;
+        let span_idx = before.rfind("<span style=\"")?;
+        let between = &before[span_idx..];
+        let closes = between.matches("</span>").count();
+        let opens = between.matches("<span style=\"").count();
+        if closes >= opens {
+            if span_idx == 0 {
+                return None;
+            }
+            check_pos = span_idx;
+            continue;
+        }
+        let after_prefix = &text[span_idx + "<span style=\"".len()..];
+        let quote_gt = after_prefix.find("\">")?;
+        let style_str = &after_prefix[..quote_gt];
+        for decl in style_str.split(';') {
+            let decl = decl.trim();
+            if let Some((p, v)) = decl.split_once(':') {
+                if p.trim().eq_ignore_ascii_case(prop_name) {
+                    return Some(v.trim().to_string());
+                }
+            }
+        }
+        if span_idx == 0 {
+            break;
+        }
+        check_pos = span_idx;
+    }
+    None
+}
+
+/// Detects the current font family at the caret or selection in the active tab.
+pub fn detect_current_font_family(shell: &Shell) -> &'static str {
+    let Some(tab) = shell.active_tab() else {
+        return shell.font_family;
+    };
+    let text = tab.text();
+    let sel = tab.document().selection();
+    let pos = if sel.is_empty() {
+        sel.head()
+    } else {
+        sel.start()
+    };
+    if pos <= text.len() && text.is_char_boundary(pos) {
+        if let Some(family) = find_style_prop_at(text, pos, "font-family") {
+            let unquoted = family.trim_matches(|c| c == '\'' || c == '"' || c == ' ');
+            if let Some(&bundled) = crate::ui::fonts::FAMILIES.iter().find(|&&f| f == unquoted) {
+                return bundled;
+            }
+            if let Some(sys) = crate::ui::fonts::system_fonts()
+                .iter()
+                .find(|f| f.name == unquoted)
+            {
+                return sys.name;
+            }
+        }
+    }
+    shell.font_family
+}
+
+/// Detects the current font size in pixels at the caret or selection in the active tab.
+pub fn detect_current_font_size(shell: &Shell) -> u32 {
+    let Some(tab) = shell.active_tab() else {
+        return shell.base_font_size;
+    };
+    let text = tab.text();
+    let sel = tab.document().selection();
+    let pos = if sel.is_empty() {
+        sel.head()
+    } else {
+        sel.start()
+    };
+    if pos <= text.len() && text.is_char_boundary(pos) {
+        if let Some(size) = find_style_prop_at(text, pos, "font-size") {
+            let num = size.trim_end_matches("px").trim_end_matches("pt").trim();
+            if let Ok(val) = num.parse::<u32>() {
+                return val;
+            }
+        }
+    }
+    shell.base_font_size
+}
+
+/// Applies `family` to the selected text via `<span style="font-family: '...'">`,
+/// or changes document default `shell.font_family` if nothing is selected.
+pub fn apply_custom_font_family(shell: &mut Shell, ctx: &egui::Context, family: &str) {
+    crate::ui::fonts::ensure_font(ctx, family);
+    if let Some(tab) = shell.active_tab_mut() {
+        if tab.kind != DocKind::Markdown && !tab.file.has_path() {
+            tab.kind = DocKind::Markdown;
+        }
+    }
+    let has_selection = shell
+        .active_tab()
+        .is_some_and(|tab| tab.document().has_selection());
+
+    if has_selection {
+        apply_format(shell, |text, selection| {
+            nc_markdown::set_font_family(text, selection, family)
+        });
+    } else {
+        if let Some(&bundled) = crate::ui::fonts::FAMILIES.iter().find(|&&f| f == family) {
+            shell.font_family = bundled;
+        } else if let Some(sys) = crate::ui::fonts::system_fonts()
+            .iter()
+            .find(|f| f.name == family)
+        {
+            shell.font_family = sys.name;
+        }
+        crate::ui::fonts::apply(ctx, family);
+    }
+}
+
+/// Steps font size: adjusts `<span style="font-size: {px}px">` on selected text by 1px,
+/// or adjusts document `shell.base_font_size` by 1px when nothing is selected.
+pub fn step_font_size(shell: &mut Shell, _ctx: &egui::Context, increase: bool) {
+    if let Some(tab) = shell.active_tab_mut() {
+        if tab.kind != DocKind::Markdown && !tab.file.has_path() {
+            tab.kind = DocKind::Markdown;
+        }
+    }
+    let has_selection = shell
+        .active_tab()
+        .is_some_and(|tab| tab.document().has_selection());
+
+    if has_selection {
+        let cur_size = detect_current_font_size(shell);
+        let new_size = if increase {
+            (cur_size + 1).min(72)
+        } else {
+            cur_size.saturating_sub(1).max(8)
+        };
+        apply_format(shell, |text, selection| {
+            nc_markdown::set_font_size(text, selection, new_size)
+        });
+    } else {
+        let cur_size = shell.base_font_size;
+        let new_size = if increase {
+            (cur_size + 1).min(72)
+        } else {
+            cur_size.saturating_sub(1).max(8)
+        };
+        shell.base_font_size = new_size;
+    }
 }
 
 /// Opens the spelling dialog for the misspelled word at the caret
@@ -2761,5 +2992,68 @@ mod tests {
                 "{before:?} -> {after:?} split a character"
             );
         }
+    }
+
+    #[test]
+    fn apply_custom_font_family_only_modifies_selected_text() {
+        let ctx = egui::Context::default();
+        let mut shell = Shell::new();
+        *shell.tabs[0].document_mut() = nc_core::Document::from_text("hello world");
+        shell.tabs[0].document_mut().select(6, 11); // "world"
+        apply_custom_font_family(&mut shell, &ctx, "Fira Mono");
+
+        assert_eq!(
+            shell.tabs[0].text(),
+            "hello <span style=\"font-family: 'Fira Mono'\">world</span>"
+        );
+        // The unselected text "hello " remains untouched.
+        assert_eq!(shell.font_family, crate::ui::fonts::DEFAULT);
+    }
+
+    #[test]
+    fn step_font_size_increments_by_one_pixel_on_selection() {
+        let ctx = egui::Context::default();
+        let mut shell = Shell::new();
+        shell.base_font_size = 14;
+        *shell.tabs[0].document_mut() = nc_core::Document::from_text("hello world");
+        shell.tabs[0].document_mut().select(6, 11); // "world"
+
+        step_font_size(&mut shell, &ctx, true);
+        assert_eq!(
+            shell.tabs[0].text(),
+            "hello <span style=\"font-size: 15px\">world</span>"
+        );
+        assert_eq!(detect_current_font_size(&shell), 15);
+        assert_eq!(shell.zoom, 100, "zoom is untouched");
+
+        // Next click on + increments to 16px
+        step_font_size(&mut shell, &ctx, true);
+        assert_eq!(
+            shell.tabs[0].text(),
+            "hello <span style=\"font-size: 16px\">world</span>"
+        );
+        assert_eq!(detect_current_font_size(&shell), 16);
+
+        // Click on - decrements to 15px
+        step_font_size(&mut shell, &ctx, false);
+        assert_eq!(
+            shell.tabs[0].text(),
+            "hello <span style=\"font-size: 15px\">world</span>"
+        );
+        assert_eq!(detect_current_font_size(&shell), 15);
+    }
+
+    #[test]
+    fn step_font_size_without_selection_changes_base_font_size_by_one() {
+        let ctx = egui::Context::default();
+        let mut shell = Shell::new();
+        shell.base_font_size = 14;
+
+        step_font_size(&mut shell, &ctx, true);
+        assert_eq!(shell.base_font_size, 15);
+        assert_eq!(shell.zoom, 100, "zoom is untouched");
+
+        step_font_size(&mut shell, &ctx, false);
+        assert_eq!(shell.base_font_size, 14);
     }
 }

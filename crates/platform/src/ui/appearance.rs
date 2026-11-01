@@ -1812,3 +1812,16 @@ fn narrow_window_keeps_primary_formatting_icons_inline_and_overflows_gradually()
         "primary formatting icons stay inline in an 840px window instead of vanishing all at once"
     );
 }
+
+#[test]
+fn painting_with_multibyte_utf8_text_does_not_panic() {
+    let mut shell = Shell::new();
+    let text = "Olá, isto é um teste com acentuação e vários caracteres: áéíóú, não é mesmo?";
+    let mut tab = crate::ui::state::Tab::markdown();
+    tab.document_mut().replace_range(0..0, text);
+    shell.tabs[0] = tab;
+    for caret in 0..text.chars().count() {
+        shell.caret = caret;
+        let _ = paint(&mut shell);
+    }
+}

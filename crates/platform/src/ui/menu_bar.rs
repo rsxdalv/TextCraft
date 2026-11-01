@@ -877,14 +877,14 @@ fn group_insert(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, palette: Pa
     a11y::label(&link, WidgetType::Button, "Insert a link");
     if link.clicked() {
         promote_untitled_to_markdown(shell);
-        actions::run(shell, ctx, CommandId("cmd.md.link"));
+        actions::open_link_dialog(shell);
     }
     let image =
         icons::button(ui, "Insert an image", "image", palette).on_hover_text("Insert an image");
     a11y::label(&image, WidgetType::Button, "Insert an image");
     if image.clicked() {
         promote_untitled_to_markdown(shell);
-        actions::run(shell, ctx, CommandId("cmd.md.image"));
+        actions::open_image_dialog(shell);
     }
     let table =
         icons::button(ui, "Insert a table", "table", palette).on_hover_text("Insert a table");
@@ -920,97 +920,97 @@ fn group_typography(
     palette: Palette,
     compact: bool,
 ) {
+    let current_family = actions::detect_current_font_family(shell);
     let display_family = if compact {
-        compact_font_label(shell.font_family)
+        compact_font_label(current_family)
     } else {
-        shell.font_family
+        current_family
     };
-    let font_menu = ui
-        .menu_button(
-            (
-                RichText::new(display_family).size(11.0),
-                icons::glyph("chevron-down", palette.text_dim),
-            ),
-            |ui| {
-                ui.set_min_width(220.0);
-                ui.horizontal(|ui| {
-                    ui.add(icons::glyph("search", palette.text_dim));
-                    let edit = egui::TextEdit::singleline(&mut shell.font_search_filter)
-                        .hint_text("Search fonts...")
-                        .desired_width(150.0);
-                    ui.add(edit);
-                    if !shell.font_search_filter.is_empty() && ui.small_button("✕").clicked() {
-                        shell.font_search_filter.clear();
+    let mut menu_config = egui::containers::menu::MenuConfig::default();
+    menu_config.close_behavior = egui::PopupCloseBehavior::CloseOnClickOutside;
+    let (font_resp, _) = egui::containers::menu::MenuButton::new((
+        RichText::new(display_family).size(11.0),
+        icons::glyph("chevron-down", palette.text_dim),
+    ))
+    .config(menu_config)
+    .ui(ui, |ui| {
+        ui.set_min_width(220.0);
+        ui.horizontal(|ui| {
+            ui.add(icons::glyph("search", palette.text_dim));
+            let edit = egui::TextEdit::singleline(&mut shell.font_search_filter)
+                .hint_text("Search fonts...")
+                .desired_width(150.0);
+            ui.add(edit);
+            if !shell.font_search_filter.is_empty() && ui.small_button("✕").clicked() {
+                shell.font_search_filter.clear();
+            }
+        });
+        ui.separator();
+
+        let filter = shell.font_search_filter.to_lowercase();
+        egui::ScrollArea::vertical()
+            .max_height(260.0)
+            .show(ui, |ui| {
+                let filtered_bundled: Vec<&str> = FAMILIES
+                    .into_iter()
+                    .filter(|f| filter.is_empty() || f.to_lowercase().contains(&filter))
+                    .collect();
+
+                if !filtered_bundled.is_empty() {
+                    ui.label(
+                        RichText::new("Bundled Fonts")
+                            .small()
+                            .color(palette.text_dim),
+                    );
+                    for &family in &filtered_bundled {
+                        if ui
+                            .selectable_label(current_family == family, family)
+                            .clicked()
+                        {
+                            promote_untitled_to_markdown(shell);
+                            actions::apply_custom_font_family(shell, ctx, family);
+                            ui.close();
+                        }
                     }
-                });
-                ui.separator();
+                }
 
-                let filter = shell.font_search_filter.to_lowercase();
-                egui::ScrollArea::vertical()
-                    .max_height(260.0)
-                    .show(ui, |ui| {
-                        let filtered_bundled: Vec<&str> = FAMILIES
-                            .into_iter()
-                            .filter(|f| filter.is_empty() || f.to_lowercase().contains(&filter))
-                            .collect();
+                let sys_all = crate::ui::fonts::system_fonts();
+                let filtered_sys: Vec<&crate::ui::fonts::SystemFont> = sys_all
+                    .iter()
+                    .filter(|f| filter.is_empty() || f.name.to_lowercase().contains(&filter))
+                    .collect();
 
-                        if !filtered_bundled.is_empty() {
-                            ui.label(
-                                RichText::new("Bundled Fonts")
-                                    .small()
-                                    .color(palette.text_dim),
-                            );
-                            for &family in &filtered_bundled {
-                                if ui
-                                    .selectable_label(shell.font_family == family, family)
-                                    .clicked()
-                                {
-                                    shell.font_family = family;
-                                    ui.close();
-                                }
-                            }
+                if !filtered_sys.is_empty() {
+                    if !filtered_bundled.is_empty() {
+                        ui.separator();
+                    }
+                    ui.label(
+                        RichText::new(format!("System Fonts ({})", sys_all.len()))
+                            .small()
+                            .color(palette.text_dim),
+                    );
+                    for f in &filtered_sys {
+                        if ui
+                            .selectable_label(current_family == f.name, f.name)
+                            .clicked()
+                        {
+                            promote_untitled_to_markdown(shell);
+                            actions::apply_custom_font_family(shell, ctx, f.name);
+                            ui.close();
                         }
+                    }
+                }
 
-                        let sys_all = crate::ui::fonts::system_fonts();
-                        let filtered_sys: Vec<&crate::ui::fonts::SystemFont> = sys_all
-                            .iter()
-                            .filter(|f| {
-                                filter.is_empty() || f.name.to_lowercase().contains(&filter)
-                            })
-                            .collect();
-
-                        if !filtered_sys.is_empty() {
-                            if !filtered_bundled.is_empty() {
-                                ui.separator();
-                            }
-                            ui.label(
-                                RichText::new(format!("System Fonts ({})", sys_all.len()))
-                                    .small()
-                                    .color(palette.text_dim),
-                            );
-                            for f in &filtered_sys {
-                                if ui
-                                    .selectable_label(shell.font_family == f.name, f.name)
-                                    .clicked()
-                                {
-                                    shell.font_family = f.name;
-                                    ui.close();
-                                }
-                            }
-                        }
-
-                        if filtered_bundled.is_empty() && filtered_sys.is_empty() {
-                            ui.label(
-                                RichText::new("No matching fonts found")
-                                    .italics()
-                                    .color(palette.text_dim),
-                            );
-                        }
-                    });
-            },
-        )
-        .response
-        .on_hover_text(format!("Font family ({})", shell.font_family));
+                if filtered_bundled.is_empty() && filtered_sys.is_empty() {
+                    ui.label(
+                        RichText::new("No matching fonts found")
+                            .italics()
+                            .color(palette.text_dim),
+                    );
+                }
+            });
+    });
+    let font_menu = font_resp.on_hover_text(format!("Font family ({})", current_family));
     a11y::label(&font_menu, WidgetType::ComboBox, "Font family");
 
     let decrease = ui
@@ -1018,9 +1018,10 @@ fn group_typography(
         .on_hover_text("Decrease font size");
     a11y::label(&decrease, WidgetType::Button, "Decrease font size");
     if decrease.clicked() {
-        actions::run(shell, ctx, CommandId("cmd.view.zoom_out"));
+        promote_untitled_to_markdown(shell);
+        actions::step_font_size(shell, ctx, false);
     }
-    let px = (14.0 * (shell.zoom as f32 / 100.0)).round() as u32;
+    let px = actions::detect_current_font_size(shell);
     ui.label(
         RichText::new(format!("{px}px"))
             .monospace()
@@ -1032,7 +1033,8 @@ fn group_typography(
         .on_hover_text("Increase font size");
     a11y::label(&increase, WidgetType::Button, "Increase font size");
     if increase.clicked() {
-        actions::run(shell, ctx, CommandId("cmd.view.zoom_in"));
+        promote_untitled_to_markdown(shell);
+        actions::step_font_size(shell, ctx, true);
     }
 }
 
@@ -1245,24 +1247,29 @@ fn detect_current_paragraph(shell: &Shell) -> ParagraphStyle {
     if let Some(tab) = shell.active_tab() {
         if tab.kind == DocKind::Markdown {
             let text = tab.text();
-            let caret = shell.caret.min(text.len());
-            let line_start = text[..caret].rfind('\n').map(|idx| idx + 1).unwrap_or(0);
-            let line_tail = &text[line_start..];
-            if line_tail.starts_with("###### ") {
-                return ParagraphStyle::Subsection;
-            } else if line_tail.starts_with("##### ") {
-                return ParagraphStyle::Section;
-            } else if line_tail.starts_with("#### ") {
-                return ParagraphStyle::Subheading;
-            } else if line_tail.starts_with("### ") {
-                return ParagraphStyle::Heading;
-            } else if line_tail.starts_with("## ") {
-                return ParagraphStyle::Subtitle;
-            } else if line_tail.starts_with("# ") {
-                return ParagraphStyle::Title;
+            let caret_byte = tab.document().selection().head().min(text.len());
+            let caret_byte = if text.is_char_boundary(caret_byte) {
+                caret_byte
             } else {
-                return ParagraphStyle::Body;
-            }
+                (0..caret_byte)
+                    .rev()
+                    .find(|&b| text.is_char_boundary(b))
+                    .unwrap_or(0)
+            };
+            let line_start = text[..caret_byte].rfind('\n').map_or(0, |idx| idx + 1);
+            let line_end = text[caret_byte..]
+                .find('\n')
+                .map_or(text.len(), |idx| caret_byte + idx);
+            let line = &text[line_start..line_end];
+            return match nc_markdown::Heading::of(line) {
+                nc_markdown::Heading::Level(1) => ParagraphStyle::Title,
+                nc_markdown::Heading::Level(2) => ParagraphStyle::Subtitle,
+                nc_markdown::Heading::Level(3) => ParagraphStyle::Heading,
+                nc_markdown::Heading::Level(4) => ParagraphStyle::Subheading,
+                nc_markdown::Heading::Level(5) => ParagraphStyle::Section,
+                nc_markdown::Heading::Level(6) => ParagraphStyle::Subsection,
+                _ => ParagraphStyle::Body,
+            };
         }
         return tab.paragraph;
     }

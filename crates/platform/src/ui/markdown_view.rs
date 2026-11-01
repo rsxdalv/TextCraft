@@ -204,17 +204,98 @@ pub(crate) fn show(tab: &Tab, ui: &mut egui::Ui, base: f32, palette: Palette) {
                     " ".repeat(view.indent * INDENT_SPACES),
                     view.marker.as_deref().unwrap_or("")
                 );
-                ui.label(job_for(
-                    block.content(),
-                    &lead,
-                    &view,
-                    base,
-                    &style,
-                    palette,
-                ));
+                if block.content().contains("![") {
+                    render_block_with_images(
+                        ui,
+                        block.content(),
+                        &lead,
+                        &view,
+                        base,
+                        &style,
+                        palette,
+                    );
+                } else {
+                    ui.label(job_for(
+                        block.content(),
+                        &lead,
+                        &view,
+                        base,
+                        &style,
+                        palette,
+                    ));
+                }
                 ui.add_space(base * 0.22);
             }
         });
+}
+
+fn render_block_with_images(
+    ui: &mut egui::Ui,
+    content: &str,
+    lead: &str,
+    view: &BlockView,
+    base: f32,
+    style: &egui::Style,
+    palette: Palette,
+) {
+    let mut cursor = 0usize;
+    let mut current_lead = lead;
+    while let Some(rel) = content[cursor..].find("![") {
+        let img_start = cursor + rel;
+        let rest = &content[img_start + 2..];
+        let Some(mid) = rest.find("](") else {
+            break;
+        };
+        let alt = &rest[..mid];
+        let after_mid = &rest[mid + 2..];
+        let Some(end) = after_mid.find(')') else {
+            break;
+        };
+        let url = &after_mid[..end];
+        let img_end = img_start + 2 + mid + 2 + end + 1;
+
+        if img_start > cursor {
+            let text_before = &content[cursor..img_start];
+            if !text_before.trim().is_empty() {
+                ui.label(job_for(
+                    text_before,
+                    current_lead,
+                    view,
+                    base,
+                    style,
+                    palette,
+                ));
+                current_lead = "";
+            }
+        }
+
+        let uri = crate::ui::editor::normalize_image_uri(url);
+        ui.add(
+            egui::Image::new(&uri)
+                .max_width((ui.available_width() - 20.0).min(640.0))
+                .max_height(400.0)
+                .corner_radius(egui::CornerRadius::same(6)),
+        );
+        if !alt.is_empty() {
+            ui.label(RichText::new(alt).small().italics().color(palette.text_dim));
+        }
+
+        cursor = img_end;
+    }
+
+    if cursor < content.len() {
+        let text_after = &content[cursor..];
+        if !text_after.trim().is_empty() {
+            ui.label(job_for(
+                text_after,
+                current_lead,
+                view,
+                base,
+                style,
+                palette,
+            ));
+        }
+    }
 }
 
 /// The laid-out text of one block: its indentation and marker, then its runs.
