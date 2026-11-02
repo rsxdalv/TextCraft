@@ -248,7 +248,13 @@ fn append_code_tokens(
             }
         }
 
-        // Inline markdown delimiters (`**`, `~~`, `==`, `` ` ``)
+        // Inline markdown delimiters (`***`, `**`, `~~`, `==`, `` ` ``)
+        if i + 2 < len && b == b'*' && bytes[i + 1] == b'*' && bytes[i + 2] == b'*' {
+            job.append(&segment[i..i + 3], 0.0, accent_fmt.clone());
+            i += 3;
+            line_start = false;
+            continue;
+        }
         if i + 1 < len
             && ((b == b'*' && bytes[i + 1] == b'*')
                 || (b == b'~' && bytes[i + 1] == b'~')
@@ -609,6 +615,23 @@ impl RichProjection {
             if s.starts_with("</u>") {
                 style.underline = false;
                 i += 4;
+                continue;
+            }
+
+            // 2.5. `***...***` (bold + italic, single-line or multi-line!)
+            if let Some((open_len, inner_len, close_len)) = match_delimited(s, "***", "***") {
+                let inner_start = i + open_len;
+                let inner_end = inner_start + inner_len;
+                let mut inner_style = style.clone();
+                inner_style.bold = true;
+                inner_style.italic = true;
+                if inner_start == inner_end {
+                    self.empty_anchors
+                        .push((self.vis_to_src_start.len(), inner_start));
+                } else {
+                    self.parse_segment(source, inner_start..inner_end, inner_style);
+                }
+                i = inner_end + close_len;
                 continue;
             }
 
@@ -1042,13 +1065,13 @@ fn match_markdown_image(s: &str) -> Option<(usize, usize)> {
     Some((mid, 2 + mid + 2 + close + 1))
 }
 
-/// Removes empty inline formatting wrappers (`****`, `<u></u>`, `~~~~`, `====`,
+/// Removes empty inline formatting wrappers (`******`, `****`, `<u></u>`, `~~~~`, `====`,
 /// ```` `` ````, `<span style="..."></span>`) left behind when the last
 /// visible character inside a formatted word is deleted in [`EditorMode::Text`].
 fn cleanup_empty_wrappers(text: &mut String) {
     loop {
         let before = text.len();
-        for pat in ["****", "~~~~", "====", "<u></u>", "``"] {
+        for pat in ["******", "****", "~~~~", "====", "<u></u>", "``"] {
             if text.contains(pat) {
                 *text = text.replace(pat, "");
             }
@@ -2320,5 +2343,25 @@ mod tests {
         assert_eq!(proj.images.len(), 1);
         assert_eq!(proj.images[0].alt, "My Alt Text");
         assert_eq!(proj.images[0].url, "https://example.com/pic.png");
+    }
+
+    #[test]
+    fn rich_projection_parses_bold_and_italic_triple_asterisks() {
+        let src = "Normal ***Bold and Italic*** End";
+        let proj = RichProjection::build(src);
+        assert_eq!(proj.visible, "Normal Bold and Italic End");
+        let styled_run = proj
+            .runs
+            .iter()
+            .find(|r| &proj.visible[r.vis_range.clone()] == "Bold and Italic")
+            .expect("Bold and Italic run");
+        assert!(styled_run.style.bold, "should have bold style");
+        assert!(styled_run.style.italic, "should have italic style");
+
+        // Check mapping back to source
+        let vis_start = proj.visible.find("Bold and Italic").unwrap();
+        let vis_end = vis_start + "Bold and Italic".len();
+        let (src_start, src_end) = proj.vis_range_to_src_bytes(vis_start, vis_end);
+        assert_eq!(&src[src_start..src_end], "Bold and Italic");
     }
 }

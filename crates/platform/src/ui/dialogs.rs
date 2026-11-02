@@ -8,13 +8,103 @@
 
 use std::path::PathBuf;
 
-use egui::{Align2, Context, Key, RichText, Vec2, WidgetType};
+use egui::{Align2, Color32, Context, CornerRadius, Key, Rect, RichText, Stroke, Vec2, WidgetType};
 
 use crate::ui::a11y;
 use crate::ui::actions;
 use crate::ui::i18n;
+use crate::ui::icons;
+use crate::ui::spacing;
 use crate::ui::state::{AppLanguage, FileDialogMode, Prompt, Shell};
+use crate::ui::theme::Palette;
 use nc_textproc::Direction;
+
+/// A styled primary action button (accent fill, white bold text, rounded corners).
+fn primary_button(
+    ui: &mut egui::Ui,
+    label: &str,
+    enabled: bool,
+    palette: Palette,
+) -> egui::Response {
+    let text = RichText::new(label)
+        .color(if enabled {
+            Color32::WHITE
+        } else {
+            palette.text_dim
+        })
+        .strong();
+    let btn = egui::Button::new(text)
+        .fill(if enabled {
+            palette.accent
+        } else {
+            palette.card
+        })
+        .stroke(Stroke::new(
+            1.0,
+            if enabled {
+                palette.accent_border
+            } else {
+                palette.border
+            },
+        ))
+        .corner_radius(CornerRadius::same(6))
+        .min_size(Vec2::new(0.0, 28.0));
+    ui.add_enabled(enabled, btn)
+}
+
+/// A styled secondary button (card fill, 1px border, rounded corners).
+fn secondary_button(ui: &mut egui::Ui, label: &str, palette: Palette) -> egui::Response {
+    let btn = egui::Button::new(RichText::new(label).color(palette.text))
+        .fill(palette.card)
+        .stroke(Stroke::new(1.0, palette.border))
+        .corner_radius(CornerRadius::same(6))
+        .min_size(Vec2::new(0.0, 28.0));
+    ui.add(btn)
+}
+
+/// A styled secondary button with enabled/disabled state.
+fn secondary_button_enabled(
+    ui: &mut egui::Ui,
+    label: &str,
+    enabled: bool,
+    palette: Palette,
+) -> egui::Response {
+    let btn = egui::Button::new(RichText::new(label).color(if enabled {
+        palette.text
+    } else {
+        palette.text_dim
+    }))
+    .fill(palette.card)
+    .stroke(Stroke::new(1.0, palette.border))
+    .corner_radius(CornerRadius::same(6))
+    .min_size(Vec2::new(0.0, 28.0));
+    ui.add_enabled(enabled, btn)
+}
+
+/// A styled destructive/danger button (e.g., "Don't save").
+fn danger_button(ui: &mut egui::Ui, label: &str, palette: Palette) -> egui::Response {
+    let btn = egui::Button::new(RichText::new(label).color(palette.danger))
+        .fill(palette.card)
+        .stroke(Stroke::new(1.0, palette.border))
+        .corner_radius(CornerRadius::same(6))
+        .min_size(Vec2::new(0.0, 28.0));
+    ui.add(btn)
+}
+
+/// Applies common dialog widget visuals (clean 1px border on inputs/controls, card background).
+fn apply_dialog_visuals(ui: &mut egui::Ui, palette: Palette) {
+    let visuals = ui.visuals_mut();
+    visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, palette.border);
+    visuals.widgets.inactive.bg_fill = palette.card;
+    visuals.widgets.inactive.corner_radius = CornerRadius::same(6);
+    visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, palette.accent);
+    visuals.widgets.hovered.corner_radius = CornerRadius::same(6);
+    visuals.widgets.active.bg_stroke = Stroke::new(1.5, palette.accent);
+    visuals.widgets.active.corner_radius = CornerRadius::same(6);
+    visuals.text_edit_bg_color = Some(palette.bg);
+    ui.spacing_mut().item_spacing = Vec2::new(10.0, 8.0);
+    ui.spacing_mut().button_padding = Vec2::new(14.0, 6.0);
+}
 
 /// Draws whichever dialog is open. The file dialog is drawn before the prompt,
 /// so a prompt raised over it sits on top.
@@ -49,6 +139,7 @@ pub fn show(shell: &mut Shell, ctx: &Context) {
 /// to the top-right of the editor surface.
 fn find(shell: &mut Shell, ctx: &Context) {
     let lang = shell.language;
+    let palette = shell.palette;
     let mut open = shell.find.open;
     egui::Window::new(i18n::tr(lang, "Find and Replace"))
         .open(&mut open)
@@ -56,98 +147,128 @@ fn find(shell: &mut Shell, ctx: &Context) {
         .resizable(false)
         .anchor(Align2::RIGHT_TOP, Vec2::new(-24.0, 70.0))
         .show(ctx, |ui| {
-            ui.set_min_width(360.0);
+            apply_dialog_visuals(ui, palette);
+            ui.set_min_width(390.0);
 
-            ui.horizontal(|ui| {
-                ui.label(i18n::tr(lang, "Find what"));
-                let response = ui.add(
-                    egui::TextEdit::singleline(&mut shell.find.query)
-                        .id(egui::Id::new("find_query"))
-                        .desired_width(240.0),
-                );
-                a11y::label(&response, WidgetType::TextEdit, i18n::tr(lang, "Find what"));
-                if shell.find.focus {
-                    response.request_focus();
-                    shell.find.focus = false;
-                }
-                if response.lost_focus()
-                    && ui.input(|input| input.key_pressed(Key::Enter))
-                    && !shell.find.query.is_empty()
-                {
-                    let direction = shell.find.direction;
-                    actions::search_step(shell, direction);
-                }
-            });
-
-            if shell.find.replace {
-                ui.horizontal(|ui| {
-                    ui.label(i18n::tr(lang, "Replace with"));
+            // Aligned 2-column Grid for input fields
+            egui::Grid::new("find_replace_grid")
+                .num_columns(2)
+                .spacing([12.0, 8.0])
+                .show(ui, |ui| {
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.label(RichText::new(i18n::tr(lang, "Find what")).strong());
+                    });
                     let response = ui.add(
-                        egui::TextEdit::singleline(&mut shell.find.replacement)
-                            .desired_width(240.0),
+                        egui::TextEdit::singleline(&mut shell.find.query)
+                            .id(egui::Id::new("find_query"))
+                            .desired_width(250.0)
+                            .margin(spacing::margin(8.0, 4.0)),
                     );
-                    a11y::label(
-                        &response,
-                        WidgetType::TextEdit,
-                        i18n::tr(lang, "Replace with"),
-                    );
+                    a11y::label(&response, WidgetType::TextEdit, i18n::tr(lang, "Find what"));
+                    if shell.find.focus {
+                        response.request_focus();
+                        shell.find.focus = false;
+                    }
+                    if response.lost_focus()
+                        && ui.input(|input| input.key_pressed(Key::Enter))
+                        && !shell.find.query.is_empty()
+                    {
+                        let direction = shell.find.direction;
+                        actions::search_step(shell, direction);
+                    }
+                    ui.end_row();
+
+                    if shell.find.replace {
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            ui.label(RichText::new(i18n::tr(lang, "Replace with")).strong());
+                        });
+                        let repl_resp = ui.add(
+                            egui::TextEdit::singleline(&mut shell.find.replacement)
+                                .desired_width(250.0)
+                                .margin(spacing::margin(8.0, 4.0)),
+                        );
+                        a11y::label(
+                            &repl_resp,
+                            WidgetType::TextEdit,
+                            i18n::tr(lang, "Replace with"),
+                        );
+                        ui.end_row();
+                    }
                 });
-            }
 
-            ui.horizontal(|ui| {
-                ui.checkbox(
-                    &mut shell.find.options.match_case,
-                    i18n::tr(lang, "Match case"),
-                );
-                ui.checkbox(
-                    &mut shell.find.options.whole_word,
-                    i18n::tr(lang, "Match whole word only"),
-                );
-            });
+            ui.add_space(2.0);
 
-            ui.horizontal(|ui| {
-                ui.label(i18n::tr(lang, "Direction"));
-                ui.radio_value(
-                    &mut shell.find.direction,
-                    Direction::Forward,
-                    i18n::tr(lang, "Down"),
-                );
-                ui.radio_value(
-                    &mut shell.find.direction,
-                    Direction::Backward,
-                    i18n::tr(lang, "Up"),
-                );
-            });
+            // Search Options Card Container
+            egui::Frame::NONE
+                .fill(palette.card)
+                .stroke(Stroke::new(1.0, palette.border))
+                .corner_radius(CornerRadius::same(6))
+                .inner_margin(spacing::margin(12.0, 8.0))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.checkbox(
+                            &mut shell.find.options.match_case,
+                            i18n::tr(lang, "Match case"),
+                        );
+                        ui.add_space(8.0);
+                        ui.checkbox(
+                            &mut shell.find.options.whole_word,
+                            i18n::tr(lang, "Match whole word only"),
+                        );
+                    });
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(format!("{}:", i18n::tr(lang, "Direction")))
+                                .color(palette.text_dim),
+                        );
+                        ui.radio_value(
+                            &mut shell.find.direction,
+                            Direction::Forward,
+                            i18n::tr(lang, "Down"),
+                        );
+                        ui.radio_value(
+                            &mut shell.find.direction,
+                            Direction::Backward,
+                            i18n::tr(lang, "Up"),
+                        );
+                        ui.add_space(16.0);
+                        ui.checkbox(&mut shell.find.wraps, i18n::tr(lang, "Wrap around"));
+                    });
+                });
 
-            ui.checkbox(&mut shell.find.wraps, i18n::tr(lang, "Wrap around"));
+            ui.add_space(4.0);
             ui.separator();
+            ui.add_space(2.0);
 
             let has_query = !shell.find.query.is_empty();
             ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(has_query, egui::Button::new(i18n::tr(lang, "Find Next")))
-                    .clicked()
-                {
+                if primary_button(ui, i18n::tr(lang, "Find Next"), has_query, palette).clicked() {
                     let direction = shell.find.direction;
                     actions::search_step(shell, direction);
                 }
                 if shell.find.replace {
-                    if ui
-                        .add_enabled(has_query, egui::Button::new(i18n::tr(lang, "Replace")))
+                    if secondary_button_enabled(ui, i18n::tr(lang, "Replace"), has_query, palette)
                         .clicked()
                     {
                         actions::replace(shell);
                     }
-                    if ui
-                        .add_enabled(has_query, egui::Button::new(i18n::tr(lang, "Replace All")))
-                        .clicked()
+                    if secondary_button_enabled(
+                        ui,
+                        i18n::tr(lang, "Replace All"),
+                        has_query,
+                        palette,
+                    )
+                    .clicked()
                     {
                         actions::replace_all(shell);
                     }
                 }
-                if ui.button(i18n::tr(lang, "Close")).clicked() {
-                    shell.find.open = false;
-                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if secondary_button(ui, i18n::tr(lang, "Close"), palette).clicked() {
+                        shell.find.open = false;
+                    }
+                });
             });
         });
 
@@ -159,6 +280,7 @@ fn find(shell: &mut Shell, ctx: &Context) {
 /// The Go to line dialog (`docs/ui-reference.md` §6). A small modal card.
 fn go_to(shell: &mut Shell, ctx: &Context) {
     let lang = shell.language;
+    let palette = shell.palette;
     let mut open = shell.go_to.open;
     egui::Window::new(i18n::tr(lang, "Go to line"))
         .open(&mut open)
@@ -166,13 +288,15 @@ fn go_to(shell: &mut Shell, ctx: &Context) {
         .resizable(false)
         .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
         .show(ctx, |ui| {
-            ui.set_min_width(240.0);
+            apply_dialog_visuals(ui, palette);
+            ui.set_min_width(280.0);
             ui.horizontal(|ui| {
-                ui.label(i18n::tr(lang, "Line number"));
+                ui.label(RichText::new(i18n::tr(lang, "Line number")).strong());
                 let response = ui.add(
                     egui::TextEdit::singleline(&mut shell.go_to.line)
                         .id(egui::Id::new("go_to_line"))
-                        .desired_width(90.0),
+                        .desired_width(110.0)
+                        .margin(spacing::margin(8.0, 4.0)),
                 );
                 a11y::label(
                     &response,
@@ -186,18 +310,21 @@ fn go_to(shell: &mut Shell, ctx: &Context) {
             });
 
             let valid = nc_textproc::parse_line_number(&shell.go_to.line).is_some();
+            ui.add_space(2.0);
             ui.separator();
+            ui.add_space(2.0);
+
             ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(valid, egui::Button::new(i18n::tr(lang, "Go to")))
-                    .clicked()
-                    || (valid && ui.input(|input| input.key_pressed(Key::Enter)))
-                {
-                    actions::go_to(shell);
-                }
-                if ui.button(i18n::tr(lang, "Cancel")).clicked() {
-                    shell.go_to.open = false;
-                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if primary_button(ui, i18n::tr(lang, "Go to"), valid, palette).clicked()
+                        || (valid && ui.input(|input| input.key_pressed(Key::Enter)))
+                    {
+                        actions::go_to(shell);
+                    }
+                    if secondary_button(ui, i18n::tr(lang, "Cancel"), palette).clicked() {
+                        shell.go_to.open = false;
+                    }
+                });
             });
         });
 
@@ -297,16 +424,19 @@ fn page_setup(shell: &mut Shell, ctx: &Context) {
             );
             a11y::label(&response, WidgetType::TextEdit, i18n::tr(lang, "Footer"));
 
+            let palette = shell.palette;
             ui.separator();
             ui.horizontal(|ui| {
-                if ui.button(i18n::tr(lang, "Print")).clicked() {
-                    shell.page_setup = shell.page_setup_dialog.draft.clone();
-                    shell.page_setup_dialog.open = false;
-                    actions::print(shell);
-                }
-                if ui.button(i18n::tr(lang, "Cancel")).clicked() {
-                    shell.page_setup_dialog.open = false;
-                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if primary_button(ui, i18n::tr(lang, "Print"), true, palette).clicked() {
+                        shell.page_setup = shell.page_setup_dialog.draft.clone();
+                        shell.page_setup_dialog.open = false;
+                        actions::print(shell);
+                    }
+                    if secondary_button(ui, i18n::tr(lang, "Cancel"), palette).clicked() {
+                        shell.page_setup_dialog.open = false;
+                    }
+                });
             });
         });
 
@@ -551,12 +681,14 @@ fn file_dialog(shell: &mut Shell, ctx: &Context) {
             ui.separator();
             ui.horizontal(|ui| {
                 let ready = !dialog.file_name.trim().is_empty();
-                if ui.add_enabled(ready, egui::Button::new(primary)).clicked() {
-                    confirm = true;
-                }
-                if ui.button(i18n::tr(lang, "Cancel")).clicked() {
-                    cancel = true;
-                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if primary_button(ui, primary, ready, palette).clicked() {
+                        confirm = true;
+                    }
+                    if secondary_button(ui, i18n::tr(lang, "Cancel"), palette).clicked() {
+                        cancel = true;
+                    }
+                });
             });
         });
 
@@ -606,6 +738,7 @@ fn prompt(shell: &mut Shell, ctx: &Context) {
         return;
     };
     let lang = shell.language;
+    let palette = shell.palette;
     let (title, body) = prompt_title_and_body(shell, &prompt);
     let buttons = prompt_buttons(&prompt);
 
@@ -618,13 +751,157 @@ fn prompt(shell: &mut Shell, ctx: &Context) {
         .resizable(false)
         .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
         .show(ctx, |ui| {
-            ui.set_min_width(380.0);
-            ui.label(body);
-            ui.separator();
+            apply_dialog_visuals(ui, palette);
+            ui.set_min_width(420.0);
+
+            // Icon + Message layout
             ui.horizontal(|ui| {
-                for button in buttons {
-                    if ui.button(i18n::tr(lang, button.label)).clicked() {
-                        answer = Some(button.answer);
+                let badge_size = 40.0;
+                let (badge_rect, _) =
+                    ui.allocate_exact_size(Vec2::splat(badge_size), egui::Sense::hover());
+                let (badge_bg, icon_name, icon_tint) = match &prompt {
+                    Prompt::UnsavedChanges { .. } => (
+                        palette.accent_soft,
+                        "file-text",
+                        palette.accent,
+                    ),
+                    Prompt::Overwrite { .. } => (
+                        Color32::from_rgba_premultiplied(0xff, 0x8a, 0x80, 50),
+                        "close",
+                        palette.danger,
+                    ),
+                    Prompt::Unrepresentable { .. } => (
+                        Color32::from_rgba_premultiplied(0xff, 0x8a, 0x80, 50),
+                        "close",
+                        palette.danger,
+                    ),
+                    Prompt::OutsideChange { .. } => (
+                        palette.accent_soft,
+                        "file-text",
+                        palette.accent,
+                    ),
+                };
+                ui.painter().rect_filled(
+                    badge_rect,
+                    CornerRadius::same(20),
+                    badge_bg,
+                );
+                ui.painter().rect_stroke(
+                    badge_rect,
+                    CornerRadius::same(20),
+                    Stroke::new(1.0, palette.border),
+                    egui::StrokeKind::Inside,
+                );
+                let icon_img = icons::glyph(icon_name, icon_tint);
+                let icon_rect = Rect::from_center_size(badge_rect.center(), Vec2::splat(20.0));
+                icon_img.paint_at(ui, icon_rect);
+
+                ui.vertical(|ui| {
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(&body)
+                                .strong()
+                                .size(13.5)
+                                .color(palette.text),
+                        )
+                        .wrap(),
+                    );
+                    let subtitle = match &prompt {
+                        Prompt::UnsavedChanges { .. } => match lang {
+                            AppLanguage::Portuguese => {
+                                "Se você fechar sem salvar, as alterações recentes serão perdidas."
+                            }
+                            AppLanguage::Spanish => {
+                                "Si cierra sin guardar, se perderán los cambios recientes."
+                            }
+                            AppLanguage::French => {
+                                "Si vous fermez sans enregistrer, les modifications récentes seront perdues."
+                            }
+                            AppLanguage::German => {
+                                "Wenn Sie ohne Speichern schließen, gehen die letzten Änderungen verloren."
+                            }
+                            AppLanguage::Italian => {
+                                "Se chiudi senza salvare, le modifiche recenti andranno perse."
+                            }
+                            AppLanguage::English => {
+                                "If you close without saving, your recent changes will be lost."
+                            }
+                        },
+                        Prompt::Overwrite { .. } => match lang {
+                            AppLanguage::Portuguese => {
+                                "O arquivo existente será substituído pelo conteúdo atual."
+                            }
+                            AppLanguage::Spanish => {
+                                "El archivo existente será reemplazado con el contenido actual."
+                            }
+                            AppLanguage::French => {
+                                "Le fichier existant sera remplacé par le contenu actuel."
+                            }
+                            AppLanguage::German => {
+                                "Die vorhandene Datei wird durch den aktuellen Inhalt ersetzt."
+                            }
+                            AppLanguage::Italian => {
+                                "Il file esistente verrà sostituito con il conteúdo atual."
+                            }
+                            AppLanguage::English => {
+                                "The existing file will be replaced with the current content."
+                            }
+                        },
+                        _ => "",
+                    };
+                    if !subtitle.is_empty() {
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(subtitle)
+                                    .size(12.0)
+                                    .color(palette.text_dim),
+                            )
+                            .wrap(),
+                        );
+                    }
+                });
+            });
+
+            ui.add_space(4.0);
+            ui.separator();
+            ui.add_space(2.0);
+
+            ui.horizontal(|ui| {
+                match &prompt {
+                    Prompt::UnsavedChanges { .. } => {
+                        if danger_button(ui, i18n::tr(lang, "Don't save"), palette).clicked() {
+                            answer = Some(Answer::DontSave);
+                        }
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if primary_button(ui, i18n::tr(lang, "Save"), true, palette).clicked()
+                                || ui.input(|i| i.key_pressed(Key::Enter))
+                            {
+                                answer = Some(Answer::Save);
+                            }
+                            if secondary_button(ui, i18n::tr(lang, "Cancel"), palette).clicked() {
+                                answer = Some(Answer::Cancel);
+                            }
+                        });
+                    }
+                    _ => {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            for button in buttons.iter().rev() {
+                                let is_primary = matches!(
+                                    button.answer,
+                                    Answer::Replace | Answer::SaveAnyway | Answer::Reload
+                                );
+                                let clicked = if is_primary {
+                                    primary_button(ui, i18n::tr(lang, button.label), true, palette).clicked()
+                                        || ui.input(|i| i.key_pressed(Key::Enter))
+                                } else {
+                                    secondary_button(ui, i18n::tr(lang, button.label), palette).clicked()
+                                };
+                                if clicked {
+                                    answer = Some(button.answer);
+                                }
+                            }
+                        });
                     }
                 }
             });
@@ -828,6 +1105,7 @@ fn file_name(path: &std::path::Path) -> String {
 /// The Insert Link dialog.
 fn link(shell: &mut Shell, ctx: &Context) {
     let lang = shell.language;
+    let palette = shell.palette;
     let mut open = shell.link_dialog.open;
     let mut insert = false;
     let mut cancel = false;
@@ -837,6 +1115,7 @@ fn link(shell: &mut Shell, ctx: &Context) {
         .resizable(false)
         .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
         .show(ctx, |ui| {
+            apply_dialog_visuals(ui, palette);
             ui.set_min_width(340.0);
             egui::Grid::new("link_dialog_grid")
                 .num_columns(2)
@@ -881,13 +1160,14 @@ fn link(shell: &mut Shell, ctx: &Context) {
             ui.separator();
             ui.add_space(4.0);
 
+            let palette = shell.palette;
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button(i18n::tr(lang, "Cancel")).clicked() {
-                        cancel = true;
-                    }
-                    if ui.button(i18n::tr(lang, "Insert")).clicked() {
+                    if primary_button(ui, i18n::tr(lang, "Insert"), true, palette).clicked() {
                         insert = true;
+                    }
+                    if secondary_button(ui, i18n::tr(lang, "Cancel"), palette).clicked() {
+                        cancel = true;
                     }
                 });
             });
@@ -908,6 +1188,7 @@ fn link(shell: &mut Shell, ctx: &Context) {
 /// The Insert Image dialog.
 fn image(shell: &mut Shell, ctx: &Context) {
     let lang = shell.language;
+    let palette = shell.palette;
     let mut open = shell.image_dialog.open;
     let mut insert = false;
     let mut cancel = false;
@@ -918,6 +1199,7 @@ fn image(shell: &mut Shell, ctx: &Context) {
         .resizable(false)
         .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
         .show(ctx, |ui| {
+            apply_dialog_visuals(ui, palette);
             ui.set_min_width(380.0);
             egui::Grid::new("image_dialog_grid")
                 .num_columns(2)
@@ -956,7 +1238,7 @@ fn image(shell: &mut Shell, ctx: &Context) {
                         if path_resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                             insert = true;
                         }
-                        if ui.button(i18n::tr(lang, "Browse...")).clicked() {
+                        if secondary_button(ui, i18n::tr(lang, "Browse..."), palette).clicked() {
                             browse = true;
                         }
                     });
@@ -967,13 +1249,14 @@ fn image(shell: &mut Shell, ctx: &Context) {
             ui.separator();
             ui.add_space(4.0);
 
+            let palette = shell.palette;
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button(i18n::tr(lang, "Cancel")).clicked() {
-                        cancel = true;
-                    }
-                    if ui.button(i18n::tr(lang, "Insert")).clicked() {
+                    if primary_button(ui, i18n::tr(lang, "Insert"), true, palette).clicked() {
                         insert = true;
+                    }
+                    if secondary_button(ui, i18n::tr(lang, "Cancel"), palette).clicked() {
+                        cancel = true;
                     }
                 });
             });

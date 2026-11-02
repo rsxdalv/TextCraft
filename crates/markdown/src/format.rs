@@ -455,6 +455,14 @@ fn inner_color_open(slice: &str) -> Option<usize> {
 fn is_only_inline_open_markers(mut s: &str) -> bool {
     s = s.trim();
     while !s.is_empty() {
+        if s.starts_with("<span style=\"") {
+            if let Some(end) = s.find("\">") {
+                s = s[end + 2..].trim();
+                continue;
+            } else {
+                return false;
+            }
+        }
         let stripped = s
             .strip_prefix("**")
             .or_else(|| s.strip_prefix("~~"))
@@ -474,6 +482,10 @@ fn is_only_inline_open_markers(mut s: &str) -> bool {
 fn is_only_inline_close_markers(mut s: &str) -> bool {
     s = s.trim();
     while !s.is_empty() {
+        if let Some(rest) = s.strip_prefix("</span>") {
+            s = rest.trim();
+            continue;
+        }
         let stripped = s
             .strip_prefix("**")
             .or_else(|| s.strip_prefix("~~"))

@@ -898,6 +898,8 @@ pub struct Tab {
     pub formatted: bool,
     /// Whether this document is shown in the side-by-side `Split` view (`gui2`).
     pub split: bool,
+    /// An explicit custom name given to the tab (e.g. from renaming in the workspace sidebar).
+    pub custom_name: Option<String>,
     /// The byte ranges of likely misspellings in the current text, refreshed by
     /// [`Tab::refresh_spellings`] and drawn as a squiggle while Spell check is on
     /// (`NC-P004`).
@@ -916,6 +918,7 @@ impl Tab {
             paragraph: ParagraphStyle::Body,
             formatted: false,
             split: false,
+            custom_name: None,
             spellings: Vec::new(),
             spellings_source: 0,
         }
@@ -933,6 +936,7 @@ impl Tab {
             paragraph: ParagraphStyle::Body,
             formatted: false,
             split: false,
+            custom_name: None,
             spellings: Vec::new(),
             spellings_source: 0,
         }
@@ -952,6 +956,7 @@ impl Tab {
             paragraph: ParagraphStyle::Body,
             formatted: false,
             split: false,
+            custom_name: None,
             spellings: Vec::new(),
             spellings_source: 0,
         })
@@ -976,6 +981,7 @@ impl Tab {
             paragraph: ParagraphStyle::Body,
             formatted: false,
             split: false,
+            custom_name: None,
             spellings: Vec::new(),
             spellings_source: 0,
         })
@@ -991,6 +997,7 @@ impl Tab {
             paragraph: ParagraphStyle::Body,
             formatted: false,
             split: false,
+            custom_name: None,
             spellings: Vec::new(),
             spellings_source: 0,
         }
@@ -1027,6 +1034,9 @@ impl Tab {
 
     /// The name shown on the tab and in the title bar.
     pub fn title(&self) -> String {
+        if let Some(custom) = &self.custom_name {
+            return custom.clone();
+        }
         self.file
             .path()
             .file_name()
@@ -1036,6 +1046,9 @@ impl Tab {
 
     /// The file name shown in the workspace sidebar (`notes.txt`, or `Untitled.md` / `Untitled.txt`).
     pub fn workspace_name(&self) -> String {
+        if let Some(custom) = &self.custom_name {
+            return custom.clone();
+        }
         self.file
             .path()
             .file_name()
@@ -1293,6 +1306,11 @@ pub struct Shell {
     pub pending_selection: Option<(usize, usize)>,
     /// A one-line notice for the status bar (`docs/ui-reference.md` §5).
     pub notification: Option<String>,
+    /// If an item in the workspace sidebar is currently being renamed:
+    /// `(tab_index, draft_name)`.
+    pub sidebar_renaming_tab: Option<(usize, String)>,
+    /// Whether to request focus on the sidebar inline rename text edit on the next frame.
+    pub sidebar_rename_request_focus: bool,
     /// The Find and Replace dialog.
     pub find: FindDialog,
     /// The Go to line dialog.
@@ -1378,6 +1396,8 @@ impl Shell {
             caret: 0,
             pending_selection: None,
             notification: None,
+            sidebar_renaming_tab: None,
+            sidebar_rename_request_focus: false,
             find: FindDialog::new(),
             go_to: GoToDialog::new(),
             link_dialog: LinkDialog::new(),

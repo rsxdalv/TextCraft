@@ -701,21 +701,28 @@ pub fn apply_custom_image(shell: &mut Shell, alt: &str, path_or_url: &str) {
 
 /// Finds the CSS style property value at `pos` by searching enclosing `<span style="...">` tags.
 fn find_style_prop_at(text: &str, pos: usize, prop_name: &str) -> Option<String> {
-    if let Some(after) = text.get(pos..)?.strip_prefix("<span style=\"") {
-        if let Some(quote_gt) = after.find("\">") {
-            let style_str = &after[..quote_gt];
-            for decl in style_str.split(';') {
-                if let Some((p, v)) = decl.trim().split_once(':') {
-                    if p.trim().eq_ignore_ascii_case(prop_name) {
-                        return Some(v.trim().to_string());
+    // If caret/selection lands directly on an opening `<span style="...">` tag, inspect its styles
+    let mut check_forward = pos;
+    while check_forward < text.len() {
+        if let Some(after) = text.get(check_forward..)?.strip_prefix("<span style=\"") {
+            if let Some(quote_gt) = after.find("\">") {
+                let style_str = &after[..quote_gt];
+                for decl in style_str.split(';') {
+                    if let Some((p, v)) = decl.trim().split_once(':') {
+                        if p.trim().eq_ignore_ascii_case(prop_name) {
+                            return Some(v.trim().to_string());
+                        }
                     }
                 }
+                check_forward += "<span style=\"".len() + quote_gt + 2;
+                continue;
             }
         }
+        break;
     }
 
     let mut check_pos = pos;
-    for _ in 0..6 {
+    for _ in 0..10 {
         let before = text.get(..check_pos)?;
         let span_idx = before.rfind("<span style=\"")?;
         let between = &before[span_idx..];
@@ -794,6 +801,44 @@ pub fn detect_current_font_size(shell: &Shell) -> u32 {
             if let Ok(val) = num.parse::<u32>() {
                 return val;
             }
+        }
+    }
+    // If text does not carry an explicit font-size span, detect heading size if on a heading line
+    if tab.kind == DocKind::Markdown {
+        let caret_byte = pos.min(text.len());
+        let caret_byte = if text.is_char_boundary(caret_byte) {
+            caret_byte
+        } else {
+            (0..caret_byte)
+                .rev()
+                .find(|&b| text.is_char_boundary(b))
+                .unwrap_or(0)
+        };
+        let line_start = text[..caret_byte].rfind('\n').map_or(0, |idx| idx + 1);
+        let line_end = text[caret_byte..]
+            .find('\n')
+            .map_or(text.len(), |idx| caret_byte + idx);
+        let line = &text[line_start..line_end];
+        let heading = match nc_markdown::Heading::of(line) {
+            nc_markdown::Heading::Body => match tab.paragraph {
+                ParagraphStyle::Title => nc_markdown::Heading::Level(1),
+                ParagraphStyle::Subtitle => nc_markdown::Heading::Level(2),
+                ParagraphStyle::Heading => nc_markdown::Heading::Level(3),
+                ParagraphStyle::Subheading => nc_markdown::Heading::Level(4),
+                ParagraphStyle::Section => nc_markdown::Heading::Level(5),
+                ParagraphStyle::Subsection => nc_markdown::Heading::Level(6),
+                ParagraphStyle::Body => nc_markdown::Heading::Body,
+            },
+            h => h,
+        };
+        match heading {
+            nc_markdown::Heading::Level(1) => return 24,
+            nc_markdown::Heading::Level(2) => return 20,
+            nc_markdown::Heading::Level(3) => return 18,
+            nc_markdown::Heading::Level(4) => return 16,
+            nc_markdown::Heading::Level(5) => return 15,
+            nc_markdown::Heading::Level(6) => return 14,
+            _ => {}
         }
     }
     shell.base_font_size
@@ -1190,6 +1235,8 @@ fn open_save_as(shell: &mut Shell, tab: usize) {
     };
     let name = if document.file.has_path() {
         document.title()
+    } else if let Some(ref custom) = document.custom_name {
+        custom.clone()
     } else {
         String::new()
     };
@@ -1304,6 +1351,45 @@ pub fn close_tab(shell: &mut Shell, index: usize) {
         return;
     }
     shell.close_tab(index);
+}
+
+/// Renames the tab at `index` to `new_name`.
+///
+/// If the tab corresponds to a file on disk, renames the file on the filesystem
+/// and updates `tab.file`. If the tab is untitled, stores `new_name` in
+/// `tab.custom_name`. Also updates `tab.kind` if the extension indicates Markdown (.md, .markdown)
+/// or plain text (.txt).
+pub fn rename_tab(shell: &mut Shell, index: usize, new_name: &str) {
+    let new_name = new_name.trim();
+    if new_name.is_empty() {
+        return;
+    }
+    let Some(tab) = shell.tabs.get_mut(index) else {
+        return;
+    };
+    let lower = new_name.to_lowercase();
+    if lower.ends_with(".md") || lower.ends_with(".markdown") {
+        tab.kind = DocKind::Markdown;
+    } else if lower.ends_with(".txt") {
+        tab.kind = DocKind::Plain;
+    }
+    if tab.file.has_path() {
+        let old_path = tab.file.path().to_path_buf();
+        let parent = old_path.parent().unwrap_or_else(|| Path::new(""));
+        let new_path = parent.join(new_name);
+        if new_path != old_path {
+            if old_path.exists() {
+                if let Err(e) = std::fs::rename(&old_path, &new_path) {
+                    shell.notification = Some(format!("Rename failed: {e}"));
+                    return;
+                }
+            }
+            tab.file.set_path(new_path);
+            tab.custom_name = None;
+        }
+    } else {
+        tab.custom_name = Some(new_name.to_string());
+    }
 }
 
 /// Asks the window to close (`File ▸ Exit`, the title bar's ✕), prompting for
@@ -1529,6 +1615,9 @@ fn write_save_as(shell: &mut Shell, tab: usize, path: &Path, encoding: Encoding,
         Some(Ok(_)) => {
             shell.file_dialog = None;
             shell.notification = None;
+            if let Some(tab_ref) = shell.tabs.get_mut(tab) {
+                tab_ref.custom_name = None;
+            }
             finish_save(shell, tab);
         }
         Some(Err(nc_textproc::Error::Encode(nc_textproc::EncodeError { characters, .. }))) => {
@@ -3055,5 +3144,35 @@ mod tests {
 
         step_font_size(&mut shell, &ctx, false);
         assert_eq!(shell.base_font_size, 14);
+    }
+
+    #[test]
+    fn rename_tab_updates_untitled_name_and_kind() {
+        let mut shell = Shell::new();
+        assert_eq!(shell.tabs[0].workspace_name(), "Untitled.txt");
+        assert_eq!(shell.tabs[0].kind, DocKind::Plain);
+
+        rename_tab(&mut shell, 0, "notes.md");
+        assert_eq!(shell.tabs[0].workspace_name(), "notes.md");
+        assert_eq!(shell.tabs[0].title(), "notes.md");
+        assert_eq!(shell.tabs[0].kind, DocKind::Markdown);
+
+        rename_tab(&mut shell, 0, "list.txt");
+        assert_eq!(shell.tabs[0].workspace_name(), "list.txt");
+        assert_eq!(shell.tabs[0].title(), "list.txt");
+        assert_eq!(shell.tabs[0].kind, DocKind::Plain);
+    }
+
+    #[test]
+    fn applying_bold_then_italic_wraps_in_triple_asterisks() {
+        let mut shell = shell_with("hello world");
+        shell.tabs[0].kind = DocKind::Markdown;
+        shell.tabs[0].document_mut().select(0, 5); // select "hello"
+
+        format_inline(&mut shell, Inline::Bold);
+        assert_eq!(shell.tabs[0].text(), "**hello** world");
+
+        format_inline(&mut shell, Inline::Italic);
+        assert_eq!(shell.tabs[0].text(), "***hello*** world");
     }
 }

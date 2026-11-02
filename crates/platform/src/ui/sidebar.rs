@@ -81,68 +81,166 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context) {
             // Reserve space for the bottom footer and fill the middle with the file list.
             let list_height = (panel_rect.bottom() - header_rect.bottom() - FOOTER_HEIGHT).max(0.0);
             let mut clicked_tab: Option<usize> = None;
+            let mut start_rename: Option<usize> = None;
+            let mut close_tab_idx: Option<usize> = None;
+
+            if ctx.input(|i| i.key_pressed(egui::Key::F2)) && shell.sidebar_renaming_tab.is_none() {
+                start_rename = Some(shell.active);
+            }
+
+            let tabs_info: Vec<(String, bool)> = shell
+                .tabs
+                .iter()
+                .enumerate()
+                .map(|(i, tab)| (tab.workspace_name(), i == shell.active))
+                .collect();
+
             ui.allocate_ui(egui::vec2(panel_rect.width(), list_height), |ui| {
                 egui::ScrollArea::vertical()
                     .id_salt("workspace_sidebar_scroll")
                     .auto_shrink([false; 2])
                     .show(ui, |ui| {
                         ui.add_space(spacing::XS);
-                        for (index, tab) in shell.tabs.iter().enumerate() {
-                            let is_active = index == shell.active;
-                            let name = tab.workspace_name();
-                            let (row_rect, response) = ui.allocate_exact_size(
-                                egui::vec2(panel_rect.width() - 1.0, ITEM_HEIGHT),
-                                Sense::click(),
-                            );
-                            a11y::label(&response, WidgetType::Button, format!("Switch to {name}"));
-                            if is_active {
-                                ui.painter().rect_filled(row_rect, 0.0, palette.accent);
-                                let border_strip = Rect::from_min_max(
-                                    row_rect.min,
-                                    egui::pos2(row_rect.left() + 4.0, row_rect.bottom()),
-                                );
-                                ui.painter()
-                                    .rect_filled(border_strip, 0.0, palette.accent_border);
-                            } else if response.hovered() {
-                                ui.painter().rect_filled(row_rect, 0.0, palette.chrome);
-                            }
+                        for (index, (name, is_active)) in tabs_info.into_iter().enumerate() {
+                            let is_renaming = shell
+                                .sidebar_renaming_tab
+                                .as_ref()
+                                .is_some_and(|(i, _)| *i == index);
 
-                            let fg = if is_active {
-                                Color32::WHITE
+                            if is_renaming {
+                                let (row_rect, _) = ui.allocate_exact_size(
+                                    egui::vec2(panel_rect.width() - 1.0, ITEM_HEIGHT),
+                                    Sense::hover(),
+                                );
+                                ui.painter().rect_filled(row_rect, 0.0, palette.chrome);
+                                paint_file_icon(
+                                    ui.painter(),
+                                    egui::pos2(
+                                        row_rect.left() + spacing::MD + 6.0,
+                                        row_rect.center().y,
+                                    ),
+                                    palette.text,
+                                );
+                                let edit_rect = Rect::from_min_max(
+                                    egui::pos2(
+                                        row_rect.left() + spacing::MD + 16.0,
+                                        row_rect.top() + 2.0,
+                                    ),
+                                    egui::pos2(
+                                        row_rect.right() - spacing::SM,
+                                        row_rect.bottom() - 2.0,
+                                    ),
+                                );
+                                let mut draft = shell
+                                    .sidebar_renaming_tab
+                                    .as_ref()
+                                    .map(|(_, d)| d.clone())
+                                    .unwrap_or_default();
+                                let edit_resp = ui.put(
+                                    edit_rect,
+                                    egui::TextEdit::singleline(&mut draft)
+                                        .id(egui::Id::new("sidebar_rename_input"))
+                                        .font(FontId::proportional(12.0))
+                                        .desired_width(edit_rect.width()),
+                                );
+                                if shell.sidebar_rename_request_focus {
+                                    edit_resp.request_focus();
+                                    shell.sidebar_rename_request_focus = false;
+                                }
+                                let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                                let esc_pressed = ui.input(|i| i.key_pressed(egui::Key::Escape));
+                                let lost_focus = edit_resp.lost_focus();
+                                if enter_pressed || lost_focus {
+                                    actions::rename_tab(shell, index, &draft);
+                                    shell.sidebar_renaming_tab = None;
+                                } else if esc_pressed {
+                                    shell.sidebar_renaming_tab = None;
+                                } else {
+                                    shell.sidebar_renaming_tab = Some((index, draft));
+                                }
                             } else {
-                                palette.text
-                            };
-                            let icon_color = if is_active {
-                                Color32::WHITE
-                            } else {
-                                palette.text_dim
-                            };
-                            paint_file_icon(
-                                ui.painter(),
-                                egui::pos2(
-                                    row_rect.left() + spacing::MD + 6.0,
-                                    row_rect.center().y,
-                                ),
-                                icon_color,
-                            );
-                            ui.painter().text(
-                                egui::pos2(
-                                    row_rect.left() + spacing::MD + 18.0,
-                                    row_rect.center().y,
-                                ),
-                                Align2::LEFT_CENTER,
-                                &name,
-                                FontId::proportional(12.0),
-                                fg,
-                            );
-                            if response.clicked() {
-                                clicked_tab = Some(index);
+                                let (row_rect, response) = ui.allocate_exact_size(
+                                    egui::vec2(panel_rect.width() - 1.0, ITEM_HEIGHT),
+                                    Sense::click(),
+                                );
+                                a11y::label(
+                                    &response,
+                                    WidgetType::Button,
+                                    format!("Switch to {name}"),
+                                );
+                                if is_active {
+                                    ui.painter().rect_filled(row_rect, 0.0, palette.accent);
+                                    let border_strip = Rect::from_min_max(
+                                        row_rect.min,
+                                        egui::pos2(row_rect.left() + 4.0, row_rect.bottom()),
+                                    );
+                                    ui.painter().rect_filled(
+                                        border_strip,
+                                        0.0,
+                                        palette.accent_border,
+                                    );
+                                } else if response.hovered() {
+                                    ui.painter().rect_filled(row_rect, 0.0, palette.chrome);
+                                }
+
+                                let fg = if is_active {
+                                    Color32::WHITE
+                                } else {
+                                    palette.text
+                                };
+                                let icon_color = if is_active {
+                                    Color32::WHITE
+                                } else {
+                                    palette.text_dim
+                                };
+                                paint_file_icon(
+                                    ui.painter(),
+                                    egui::pos2(
+                                        row_rect.left() + spacing::MD + 6.0,
+                                        row_rect.center().y,
+                                    ),
+                                    icon_color,
+                                );
+                                ui.painter().text(
+                                    egui::pos2(
+                                        row_rect.left() + spacing::MD + 18.0,
+                                        row_rect.center().y,
+                                    ),
+                                    Align2::LEFT_CENTER,
+                                    &name,
+                                    FontId::proportional(12.0),
+                                    fg,
+                                );
+                                response.context_menu(|ui| {
+                                    if ui.button(i18n::tr(shell.language, "Rename")).clicked() {
+                                        start_rename = Some(index);
+                                        ui.close();
+                                    }
+                                    if ui.button(i18n::tr(shell.language, "Close tab")).clicked() {
+                                        close_tab_idx = Some(index);
+                                        ui.close();
+                                    }
+                                });
+                                if response.double_clicked() {
+                                    start_rename = Some(index);
+                                } else if response.clicked() {
+                                    clicked_tab = Some(index);
+                                }
                             }
                         }
                     });
             });
-            if let Some(index) = clicked_tab {
+            if let Some(index) = start_rename {
+                if let Some(tab) = shell.tabs.get(index) {
+                    shell.sidebar_renaming_tab = Some((index, tab.workspace_name()));
+                    shell.sidebar_rename_request_focus = true;
+                    shell.active = index;
+                }
+            } else if let Some(index) = clicked_tab {
                 shell.active = index;
+            }
+            if let Some(index) = close_tab_idx {
+                actions::close_tab(shell, index);
             }
 
             // Footer: + New File button.
