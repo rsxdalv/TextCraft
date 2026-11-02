@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.github.rsxdalv.TextCraft</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>TextCraft</name>
+  <summary>A fast, modern text and Markdown editor</summary>
+  <description>
+    <p>
+      TextCraft is a fast, lightweight text and Markdown editor written in Rust with egui and wgpu.
+      It features atomic file saves, multi-tab editing, session restore, robust character encoding
+      detection, and a live rendered Markdown view.
+    </p>
+    <p>Features include:</p>
+    <ul>
+      <li>Atomic saves preventing accidental data loss</li>
+      <li>Markdown formatting toolbar, tables, and rendered side-by-side or preview view</li>
+      <li>Multi-tab workspace with inline file renaming and tab context actions</li>
+      <li>Advanced Find and Replace with regex and whole-word matching</li>
+      <li>Modern dark and light themes (Warm Paper &amp; Pine-Slate)</li>
+      <li>Multilingual user interface</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">com.github.rsxdalv.TextCraft.desktop</launchable>
+  <url type="homepage">https://github.com/rsxdalv/TextCraft</url>
+  <url type="bugtracker">https://github.com/rsxdalv/TextCraft/issues</url>
+  <url type="vcs-browser">https://github.com/rsxdalv/TextCraft</url>
+  <developer id="com.github.rsxdalv">
+    <name>TextCraft Contributors</name>
+  </developer>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/rsxdalv/TextCraft/main/site/screenshot.png</image>
+      <caption>TextCraft showing Markdown editing and live rendered view</caption>
+    </screenshot>
+  </screenshots>
+  <releases>
+    <release version="0.1.1" date="2026-11-01">
+      <description>
+        <p>Comprehensive UI/UX overhaul, workspace tab management, and Markdown formatting improvements.</p>
+      </description>
+    </release>
+  </releases>
+  <content_rating type="oars-1.1"/>
+</component>
