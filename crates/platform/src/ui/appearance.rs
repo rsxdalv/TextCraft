@@ -166,7 +166,7 @@ fn tab_rects(output: &egui::FullOutput) -> Vec<Rect> {
 /// The colour is the point of `docs/ui-reference.md` §1's wording ("underlined in
 /// the accent colour"), so it is matched rather than assumed from geometry.
 fn accent_underlines(output: &egui::FullOutput) -> Vec<Rect> {
-    let accent = theme::Palette::DARK.accent;
+    let accent = theme::Palette::LIGHT.accent;
     filled_rects(output)
         .into_iter()
         .filter(|(rect, fill)| *fill == accent && rect.height() <= 2.5 && rect.width() > 20.0)
@@ -174,14 +174,14 @@ fn accent_underlines(output: &egui::FullOutput) -> Vec<Rect> {
         .collect()
 }
 
-/// The unsaved-changes dots: grey (dim-text) circles of the marker's radius inside
+/// The unsaved-changes dots: accent circles of the marker's radius inside
 /// the title bar band.
 ///
 /// Filtered by radius and band because the same shell paints other circles — the
 /// account avatar and the settings toggles — and neither is a dirty marker.
 fn dirty_dots(output: &egui::FullOutput) -> Vec<egui::Pos2> {
     let band = super::title_bar::HEIGHT;
-    let dim = theme::Palette::DARK.text_dim;
+    let accent = theme::Palette::LIGHT.accent;
     output
         .shapes
         .iter()
@@ -189,7 +189,7 @@ fn dirty_dots(output: &egui::FullOutput) -> Vec<egui::Pos2> {
             Shape::Circle(shape)
                 if (shape.radius - DOT_RADIUS).abs() < 0.01
                     && shape.center.y <= band
-                    && shape.fill == dim =>
+                    && shape.fill == accent =>
             {
                 Some(shape.center)
             }
@@ -276,7 +276,7 @@ fn only_the_active_tab_is_filled_and_none_is_underlined_or_highlighted() {
         assert_eq!(fills.len(), 3, "one tab per document");
         for (index, fill) in fills {
             let expected = if index == active {
-                palette.chrome
+                palette.bg
             } else {
                 palette.title
             };
@@ -375,6 +375,9 @@ fn answering_the_unsaved_prompt_clears_the_dot() {
 /// only what the shell paints once a tab asks to be rendered.
 fn rendered(text: &str, formatted: bool) -> Shell {
     let mut shell = Shell::new();
+    if !formatted {
+        shell.editor_mode = crate::ui::state::EditorMode::Code;
+    }
     shell.open_tab(DocKind::Markdown);
     let index = shell.active;
     let tab = &mut shell.tabs[index];
@@ -1106,7 +1109,7 @@ fn the_settings_page_paints_the_theme_row_with_the_choice_it_offers() {
         "Appearance",
         "App theme",
         "Select which app theme to display",
-        "Dark",
+        "Light",
     ] {
         assert!(
             painted.iter().any(|text| text.contains(needle)),
@@ -1167,27 +1170,23 @@ fn switching_the_theme_recolours_the_open_window_from_the_next_frame() {
     frame(&ctx, &mut shell, None);
     assert_eq!(
         shell.palette,
-        Palette::DARK,
-        "it starts in the captured dark look"
-    );
-
-    shell.theme = AppTheme::Light;
-    let output = frame(&ctx, &mut shell, None);
-    assert_eq!(
-        shell.palette,
         Palette::LIGHT,
-        "the choice is obeyed at once"
-    );
-    assert!(
-        fills(&output).contains(&Palette::LIGHT.chrome),
-        "and the chrome the user is looking at is what changed"
+        "it starts in the captured light look"
     );
 
     shell.theme = AppTheme::Dark;
+    let output = frame(&ctx, &mut shell, None);
+    assert_eq!(shell.palette, Palette::DARK, "the choice is obeyed at once");
+    assert!(
+        fills(&output).contains(&Palette::DARK.chrome),
+        "and the chrome the user is looking at is what changed"
+    );
+
+    shell.theme = AppTheme::Light;
     frame(&ctx, &mut shell, None);
     assert_eq!(
         shell.palette,
-        Palette::DARK,
+        Palette::LIGHT,
         "and it goes back the same way"
     );
 }
@@ -1208,13 +1207,13 @@ fn following_the_system_goes_light_when_the_system_does_and_back_when_it_does() 
 #[test]
 fn following_the_system_keeps_the_captured_look_until_the_system_says_anything() {
     // Headless, or on a platform that reports nothing: "use the system setting"
-    // cannot be honoured, and guessing light would be a visible surprise, so the
-    // look the reference was captured in is the one that stays.
+    // cannot be honoured, and the look the reference was captured in is the one
+    // that stays.
     let mut shell = Shell::new();
     shell.theme = AppTheme::System;
 
     let seen = palettes_across(&mut shell, [None, None]);
-    assert_eq!(seen, vec![Palette::DARK, Palette::DARK]);
+    assert_eq!(seen, vec![Palette::LIGHT, Palette::LIGHT]);
 }
 
 #[test]
@@ -1648,4 +1647,181 @@ fn an_empty_recent_submenu_says_so_instead_of_not_opening() {
         paints(&menu, "No recent files"),
         "Recent opened onto nothing"
     );
+}
+
+#[test]
+fn the_source_editor_paints_a_line_numbers_gutter() {
+    let mut shell = Shell::new();
+    shell.editor_mode = crate::ui::state::EditorMode::Code;
+    shell
+        .active_tab_mut()
+        .expect("a tab")
+        .document_mut()
+        .insert_str("first\nsecond\nthird");
+
+    let output = paint(&mut shell);
+    let painted = painted_text(&output);
+    for num in ["1", "2", "3"] {
+        assert!(
+            painted.iter().any(|(text, _)| text == num),
+            "gutter should paint line number {num}"
+        );
+    }
+    assert!(
+        filled_rects(&output)
+            .iter()
+            .any(|(_, fill)| *fill == shell.palette.gutter_bg),
+        "gutter background should be painted in palette.gutter_bg"
+    );
+}
+
+#[test]
+fn text_editor_mode_hides_raw_tags_and_code_editor_mode_reveals_them() {
+    let mut shell = Shell::new();
+    assert_eq!(shell.editor_mode, crate::ui::state::EditorMode::Text);
+    shell
+        .active_tab_mut()
+        .expect("a tab")
+        .document_mut()
+        .insert_str("<span style=\"color: #1971C2\">sdfadfasdfasdfasdfasdfasdf</span>");
+
+    let text_mode_output = paint(&mut shell);
+    let text_mode_painted: Vec<String> = painted_text(&text_mode_output)
+        .into_iter()
+        .map(|(t, _)| t)
+        .collect();
+    assert!(
+        text_mode_painted
+            .iter()
+            .any(|t| t == "sdfadfasdfasdfasdfasdfasdf"),
+        "Text Editor mode should paint the styled text without raw <span...> tags, got {text_mode_painted:?}"
+    );
+    assert!(
+        !text_mode_painted.iter().any(|t| t.contains("<span")),
+        "Text Editor mode must not expose raw <span...> tags in the editor"
+    );
+    assert!(
+        !filled_rects(&text_mode_output)
+            .iter()
+            .any(|(_, fill)| *fill == shell.palette.gutter_bg),
+        "Text Editor mode should not paint the code line-numbers gutter"
+    );
+
+    // Toggle to Code Editor mode and verify raw source and gutter are shown.
+    crate::ui::actions::toggle_editor_mode(&mut shell);
+    assert_eq!(shell.editor_mode, crate::ui::state::EditorMode::Code);
+    let code_mode_output = paint(&mut shell);
+    let code_mode_painted: Vec<String> = painted_text(&code_mode_output)
+        .into_iter()
+        .map(|(t, _)| t)
+        .collect();
+    assert!(
+        code_mode_painted
+            .iter()
+            .any(|t| t.contains("<span style=\"color: #1971C2\">")),
+        "Code Editor mode should expose the full raw source with tags, got {code_mode_painted:?}"
+    );
+    assert!(
+        filled_rects(&code_mode_output)
+            .iter()
+            .any(|(_, fill)| *fill == shell.palette.gutter_bg),
+        "Code Editor mode should paint the line-numbers gutter"
+    );
+}
+
+#[test]
+fn the_workspace_sidebar_lists_open_files_and_can_be_toggled() {
+    let mut shell = Shell::new();
+    shell.open_tab(DocKind::Markdown);
+
+    let output = paint(&mut shell);
+    assert!(
+        paints(&output, "WORKSPACE") && paints(&output, "2 files") && paints(&output, "+ New File"),
+        "sidebar should paint WORKSPACE header, file count, and + New File button"
+    );
+    assert!(
+        filled_rects(&output)
+            .iter()
+            .any(|(_, fill)| *fill == shell.palette.sidebar_bg),
+        "sidebar background should be painted in palette.sidebar_bg"
+    );
+    assert!(
+        filled_rects(&output)
+            .iter()
+            .any(|(_, fill)| *fill == shell.palette.accent_border),
+        "active file row should carry the 4pt accent_border strip"
+    );
+
+    shell.sidebar_visible = false;
+    let hidden = paint(&mut shell);
+    assert!(
+        !paints(&hidden, "WORKSPACE"),
+        "hiding the sidebar removes WORKSPACE from the frame"
+    );
+}
+
+#[test]
+fn the_status_bar_paints_word_count_and_sync_indicator() {
+    let mut shell = Shell::new();
+    let clean = paint(&mut shell);
+    assert!(
+        paints(&clean, "0 words") && paints(&clean, "Synced locally"),
+        "clean empty document should show 0 words and Synced locally in the status bar"
+    );
+
+    shell
+        .active_tab_mut()
+        .expect("a tab")
+        .document_mut()
+        .insert_str("Welcome to text craft!");
+    let edited = paint(&mut shell);
+    assert!(
+        paints(&edited, "4 words") && paints(&edited, "Unsaved changes"),
+        "dirty 4-word document should show 4 words and Unsaved changes in the status bar"
+    );
+}
+
+#[test]
+fn narrow_window_keeps_primary_formatting_icons_inline_and_overflows_gradually() {
+    let ctx = egui::Context::default();
+    let mut shell = Shell::new();
+    theme::install(&ctx, shell.palette);
+
+    // Paint two frames at a smaller 840px window so measured group widths are active.
+    for _ in 0..2 {
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(840.0, 600.0),
+            )),
+            ..Default::default()
+        };
+        let _ = render(&ctx, input, &mut shell);
+    }
+
+    let input = egui::RawInput {
+        screen_rect: Some(Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(840.0, 600.0),
+        )),
+        ..Default::default()
+    };
+    let output = render(&ctx, input, &mut shell);
+    assert!(
+        paints(&output, "H1") && paints(&output, "B") && paints(&output, "I"),
+        "primary formatting icons stay inline in an 840px window instead of vanishing all at once"
+    );
+}
+
+#[test]
+fn painting_with_multibyte_utf8_text_does_not_panic() {
+    let mut shell = Shell::new();
+    let text = "Olá, isto é um teste com acentuação e vários caracteres: áéíóú, não é mesmo?";
+    let mut tab = crate::ui::state::Tab::markdown();
+    tab.document_mut().replace_range(0..0, text);
+    shell.tabs[0] = tab;
+    for caret in 0..text.chars().count() {
+        shell.caret = caret;
+        let _ = paint(&mut shell);
+    }
 }

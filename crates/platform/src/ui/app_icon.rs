@@ -18,8 +18,8 @@ struct Shape {
     color: Color32,
 }
 
-const BRAND: Color32 = Color32::from_rgb(0x2a, 0x8f, 0xe8);
-const BRAND_DARK: Color32 = Color32::from_rgb(0x14, 0x4f, 0x8a);
+const BRAND: Color32 = Color32::from_rgb(0x02, 0x84, 0xc7);
+const BRAND_DARK: Color32 = Color32::from_rgb(0x03, 0x69, 0xa1);
 const PAPER: Color32 = Color32::from_rgb(0xfc, 0xfd, 0xff);
 
 const fn shape(cx: f32, cy: f32, hw: f32, hh: f32, radius: f32, color: Color32) -> Shape {

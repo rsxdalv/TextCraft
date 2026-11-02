@@ -110,3 +110,35 @@ fn a_cleared_line_can_be_formatted_again() {
     let reheaded = set_heading(&cleared.text, all(&cleared.text), Heading::Level(3)).unwrap();
     assert_eq!(reheaded.text, "### Heading");
 }
+
+#[test]
+fn color_spans_and_underline_tags_are_cleared() {
+    let text = "<span style=\"color: #ff0000\">red</span> and <u>underlined</u>";
+    let cleared = clear_formatting(text, all(text)).unwrap();
+    assert_eq!(cleared.text, "red and underlined");
+}
+
+#[test]
+fn enclosing_color_span_and_underline_are_cleared_when_selecting_inner_text() {
+    let text = "before <span style=\"color: #ff0000\">red</span> after";
+    let sel = selection_of(text, "red");
+    let cleared = clear_formatting(text, sel).unwrap();
+    assert_eq!(cleared.text, "before red after");
+
+    let text_u = "before <u>underlined</u> after";
+    let sel_u = selection_of(text_u, "underlined");
+    let cleared_u = clear_formatting(text_u, sel_u).unwrap();
+    assert_eq!(cleared_u.text, "before underlined after");
+}
+
+#[test]
+fn complex_nested_multi_layered_formatting_clears_in_one_pass() {
+    let text = "<span style=\"font-family: 'Arial'\"><span style=\"font-size: 18px\"><span style=\"color: #00ff00\">==~~<u>***`all together`***</u>~~==</span></span></span>";
+    let cleared = clear_formatting(text, all(text)).unwrap();
+    assert_eq!(cleared.text, "all together");
+
+    let wrapped = format!("start {text} finish");
+    let inner_sel = selection_of(&wrapped, "all together");
+    let cleared_inner = clear_formatting(&wrapped, inner_sel).unwrap();
+    assert_eq!(cleared_inner.text, "start all together finish");
+}

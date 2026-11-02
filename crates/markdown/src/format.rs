@@ -31,15 +31,36 @@ pub enum Inline {
     Italic,
     /// `~~strikethrough~~`
     Strike,
+    /// `<u>underline</u>`
+    Underline,
+    /// `==highlight==`
+    Highlight,
+    /// `` `code` ``
+    Code,
 }
 
 impl Inline {
-    /// The two-byte marker this emphasis is written with.
+    /// The opening marker this emphasis is written with.
     pub fn marker(self) -> &'static str {
         match self {
             Inline::Bold => "**",
             Inline::Italic => "*",
             Inline::Strike => "~~",
+            Inline::Underline => "<u>",
+            Inline::Highlight => "==",
+            Inline::Code => "`",
+        }
+    }
+
+    /// The closing marker this emphasis is written with.
+    pub fn close_marker(self) -> &'static str {
+        match self {
+            Inline::Bold => "**",
+            Inline::Italic => "*",
+            Inline::Strike => "~~",
+            Inline::Underline => "</u>",
+            Inline::Highlight => "==",
+            Inline::Code => "`",
         }
     }
 }
@@ -107,40 +128,39 @@ pub fn toggle_inline(text: &str, selection: Range, kind: Inline) -> Option<Outco
     if !selection.is_within(text) {
         return None;
     }
-    let marker = kind.marker();
-    let width = marker.len();
+    let open = kind.marker();
+    let close = kind.close_marker();
+    let open_width = open.len();
+    let close_width = close.len();
 
     if selection.is_empty() {
         // Written out directly rather than through `apply`: a caret has no edges to
         // stretch, and what the user wants is to type *between* the markers.
-        let mut edited = String::with_capacity(text.len() + width * 2);
+        let mut edited = String::with_capacity(text.len() + open_width + close_width);
         edited.push_str(&text[..selection.start]);
-        edited.push_str(marker);
-        edited.push_str(marker);
+        edited.push_str(open);
+        edited.push_str(close);
         edited.push_str(&text[selection.start..]);
         return Some(Outcome {
             text: edited,
-            selection: Range::caret(selection.start + width),
+            selection: Range::caret(selection.start + open_width),
         });
     }
 
     // Markers on the outside: the user selected the words they want unmarked.
-    if preceded_by(text, selection.start, marker) && followed_by(text, selection.end, marker) {
-        let outer = [
-            Patch::delete(Range::new(selection.start - width, selection.start)?),
-            Patch::delete(Range::new(selection.end, selection.end + width)?),
-        ];
+    if let Some((open_range, close_range)) = find_enclosing_inline(text, selection, kind) {
+        let outer = [Patch::delete(open_range), Patch::delete(close_range)];
         return Some(apply(text, &outer, selection));
     }
 
     // Markers on the inside: the user selected the whole marked run.
-    if selection.len() > width * 2
-        && followed_by(text, selection.start, marker)
-        && preceded_by(text, selection.end, marker)
+    if selection.len() > open_width + close_width
+        && open_marker_starts_at(text, selection.start, kind)
+        && close_marker_ends_at(text, selection.end, kind)
     {
         let inner = [
-            Patch::delete(Range::new(selection.start, selection.start + width)?),
-            Patch::delete(Range::new(selection.end - width, selection.end)?),
+            Patch::delete(Range::new(selection.start, selection.start + open_width)?),
+            Patch::delete(Range::new(selection.end - close_width, selection.end)?),
         ];
         return Some(apply(text, &inner, selection));
     }
@@ -148,10 +168,577 @@ pub fn toggle_inline(text: &str, selection: Range, kind: Inline) -> Option<Outco
     // Otherwise wrap, and let the selection carry the markers so a second press
     // meets the "inside" case above and unwraps.
     let wrap = [
-        Patch::insert(selection.start, marker),
-        Patch::insert(selection.end, marker),
+        Patch::insert(selection.start, open),
+        Patch::insert(selection.end, close),
     ];
     Some(apply(text, &wrap, selection))
+}
+
+/// Returns whether `selection` is wrapped by `kind`'s markers or encloses them.
+pub fn is_inline_active(text: &str, selection: Range, kind: Inline) -> bool {
+    if !selection.is_within(text) {
+        return false;
+    }
+    let open_width = kind.marker().len();
+    let close_width = kind.close_marker().len();
+
+    if find_enclosing_inline(text, selection, kind).is_some() {
+        return true;
+    }
+
+    if selection.len() >= open_width + close_width
+        && open_marker_starts_at(text, selection.start, kind)
+        && close_marker_ends_at(text, selection.end, kind)
+    {
+        return true;
+    }
+
+    false
+}
+
+fn count_consecutive(bytes: &[u8], ch: u8) -> usize {
+    bytes.iter().take_while(|&&b| b == ch).count()
+}
+
+fn count_consecutive_rev(bytes: &[u8], ch: u8) -> usize {
+    bytes.iter().rev().take_while(|&&b| b == ch).count()
+}
+
+/// Whether `kind`'s opening marker sits immediately before `pos`.
+fn open_marker_precedes(text: &str, pos: usize, kind: Inline) -> bool {
+    if pos > text.len() {
+        return false;
+    }
+    let bytes = text.as_bytes();
+    match kind {
+        Inline::Bold => count_consecutive_rev(&bytes[..pos], b'*') >= 2,
+        Inline::Italic => count_consecutive_rev(&bytes[..pos], b'*') % 2 == 1,
+        Inline::Code => count_consecutive_rev(&bytes[..pos], b'`') == 1,
+        Inline::Strike => preceded_by(text, pos, "~~"),
+        Inline::Underline => preceded_by(text, pos, "<u>"),
+        Inline::Highlight => preceded_by(text, pos, "=="),
+    }
+}
+
+/// Whether `kind`'s closing marker sits immediately after `pos`.
+fn close_marker_follows(text: &str, pos: usize, kind: Inline) -> bool {
+    if pos > text.len() {
+        return false;
+    }
+    let bytes = text.as_bytes();
+    match kind {
+        Inline::Bold => count_consecutive(&bytes[pos..], b'*') >= 2,
+        Inline::Italic => count_consecutive(&bytes[pos..], b'*') % 2 == 1,
+        Inline::Code => count_consecutive(&bytes[pos..], b'`') == 1,
+        Inline::Strike => followed_by(text, pos, "~~"),
+        Inline::Underline => followed_by(text, pos, "</u>"),
+        Inline::Highlight => followed_by(text, pos, "=="),
+    }
+}
+
+/// Whether `kind`'s opening marker starts at `pos` (inside a selection).
+fn open_marker_starts_at(text: &str, pos: usize, kind: Inline) -> bool {
+    if pos > text.len() {
+        return false;
+    }
+    let bytes = text.as_bytes();
+    match kind {
+        Inline::Bold => count_consecutive(&bytes[pos..], b'*') >= 2,
+        Inline::Italic => count_consecutive(&bytes[pos..], b'*') % 2 == 1,
+        Inline::Code => count_consecutive(&bytes[pos..], b'`') == 1,
+        Inline::Strike => followed_by(text, pos, "~~"),
+        Inline::Underline => followed_by(text, pos, "<u>"),
+        Inline::Highlight => followed_by(text, pos, "=="),
+    }
+}
+
+/// Whether `kind`'s closing marker ends at `pos` (inside a selection).
+fn close_marker_ends_at(text: &str, pos: usize, kind: Inline) -> bool {
+    if pos > text.len() {
+        return false;
+    }
+    let bytes = text.as_bytes();
+    match kind {
+        Inline::Bold => count_consecutive_rev(&bytes[..pos], b'*') >= 2,
+        Inline::Italic => count_consecutive_rev(&bytes[..pos], b'*') % 2 == 1,
+        Inline::Code => count_consecutive_rev(&bytes[..pos], b'`') == 1,
+        Inline::Strike => preceded_by(text, pos, "~~"),
+        Inline::Underline => preceded_by(text, pos, "</u>"),
+        Inline::Highlight => preceded_by(text, pos, "=="),
+    }
+}
+
+/// Finds `(open_range, close_range)` of `kind` sitting immediately outside
+/// `selection`, or outside any other inline markers that immediately wrap `selection`.
+fn find_enclosing_inline(text: &str, selection: Range, kind: Inline) -> Option<(Range, Range)> {
+    let mut left = selection.start;
+    let mut right = selection.end;
+    let open_width = kind.marker().len();
+    let close_width = kind.close_marker().len();
+    for _ in 0..8 {
+        if open_marker_precedes(text, left, kind) && close_marker_follows(text, right, kind) {
+            return Some((
+                Range::new(left - open_width, left)?,
+                Range::new(right, right + close_width)?,
+            ));
+        }
+        if let Some((new_left, new_right)) = step_out_one_wrapper(text, left, right) {
+            left = new_left;
+            right = new_right;
+        } else {
+            break;
+        }
+    }
+    None
+}
+
+/// Steps `left..right` outward across one enclosing inline wrapper (`**`, `*`, `~~`,
+/// `==`, `<u>`/`</u>`, `` ` ``, or `<span style="color: ...">` / `</span>`).
+fn step_out_one_wrapper(text: &str, left: usize, right: usize) -> Option<(usize, usize)> {
+    if let Some(open_start) = outer_span_open(text, left) {
+        if followed_by(text, right, "</span>") {
+            return Some((open_start, right + "</span>".len()));
+        }
+    }
+    for kind in [
+        Inline::Bold,
+        Inline::Strike,
+        Inline::Highlight,
+        Inline::Underline,
+        Inline::Code,
+        Inline::Italic,
+    ] {
+        if open_marker_precedes(text, left, kind) && close_marker_follows(text, right, kind) {
+            let o_len = kind.marker().len();
+            let c_len = kind.close_marker().len();
+            return Some((left - o_len, right + c_len));
+        }
+    }
+    None
+}
+
+/// Finds `(open_range, close_range)` of an enclosing `<span style="color: ...">...</span>`
+/// sitting immediately outside `selection` or outside other inline markers around `selection`.
+fn find_enclosing_color_span(text: &str, selection: Range) -> Option<(Range, Range)> {
+    const CLOSE: &str = "</span>";
+    let mut left = selection.start;
+    let mut right = selection.end;
+    for _ in 0..8 {
+        if let Some(open_start) = outer_color_open(text, left) {
+            if followed_by(text, right, CLOSE) {
+                return Some((
+                    Range::new(open_start, left)?,
+                    Range::new(right, right + CLOSE.len())?,
+                ));
+            }
+        }
+        if let Some((new_left, new_right)) = step_out_one_wrapper(text, left, right) {
+            left = new_left;
+            right = new_right;
+        } else {
+            break;
+        }
+    }
+    None
+}
+
+/// Wraps the selection in `<span style="color: #HEX">…</span>`, updates an existing
+/// color span to `hex`, or removes the color span when `hex` is `None` or matches the
+/// color already applied.
+pub fn set_text_color(text: &str, selection: Range, hex: Option<&str>) -> Option<Outcome> {
+    if !selection.is_within(text) {
+        return None;
+    }
+    const CLOSE: &str = "</span>";
+
+    // Check if `<span style="color: ...">` and `</span>` sit outside `selection` (directly or across inline markers).
+    if let Some((open_range, close_range)) = find_enclosing_color_span(text, selection) {
+        let existing_open = open_range.slice(text);
+        let target_open = hex.map(|c| format!("<span style=\"color: {c}\">"));
+        return match target_open {
+            None => {
+                let patches = [Patch::delete(open_range), Patch::delete(close_range)];
+                Some(apply(text, &patches, selection))
+            }
+            Some(ref new_open) if new_open == existing_open => {
+                let patches = [Patch::delete(open_range), Patch::delete(close_range)];
+                Some(apply(text, &patches, selection))
+            }
+            Some(new_open) => {
+                let patches = [Patch {
+                    at: open_range,
+                    with: new_open,
+                }];
+                Some(apply(text, &patches, selection))
+            }
+        };
+    }
+
+    // Check if `<span style="color: ...">` and `</span>` sit immediately inside `selection`.
+    if let Some(open_len) = inner_color_open(selection.slice(text)) {
+        if selection.len() > open_len + CLOSE.len() && preceded_by(text, selection.end, CLOSE) {
+            let existing_open = &text[selection.start..selection.start + open_len];
+            let target_open = hex.map(|c| format!("<span style=\"color: {c}\">"));
+            return match target_open {
+                None => {
+                    let patches = [
+                        Patch::delete(Range::new(selection.start, selection.start + open_len)?),
+                        Patch::delete(Range::new(selection.end - CLOSE.len(), selection.end)?),
+                    ];
+                    Some(apply(text, &patches, selection))
+                }
+                Some(ref new_open) if new_open == existing_open => {
+                    let patches = [
+                        Patch::delete(Range::new(selection.start, selection.start + open_len)?),
+                        Patch::delete(Range::new(selection.end - CLOSE.len(), selection.end)?),
+                    ];
+                    Some(apply(text, &patches, selection))
+                }
+                Some(new_open) => {
+                    let patches = [Patch {
+                        at: Range::new(selection.start, selection.start + open_len)?,
+                        with: new_open,
+                    }];
+                    Some(apply(text, &patches, selection))
+                }
+            };
+        }
+    }
+
+    let Some(color_hex) = hex else {
+        return remove_color_spans(text, selection);
+    };
+    let open = format!("<span style=\"color: {color_hex}\">");
+    if selection.is_empty() {
+        let mut edited = String::with_capacity(text.len() + open.len() + CLOSE.len());
+        edited.push_str(&text[..selection.start]);
+        edited.push_str(&open);
+        edited.push_str(CLOSE);
+        edited.push_str(&text[selection.start..]);
+        return Some(Outcome {
+            text: edited,
+            selection: Range::caret(selection.start + open.len()),
+        });
+    }
+
+    let wrap = [
+        Patch::insert(selection.start, open),
+        Patch::insert(selection.end, CLOSE),
+    ];
+    Some(apply(text, &wrap, selection))
+}
+
+fn outer_span_open(text: &str, at: usize) -> Option<usize> {
+    let before = text.get(..at)?;
+    let start = before.rfind("<span style=\"")?;
+    let tag = &before[start..];
+    if tag.ends_with("\">") && !tag.contains('\n') {
+        Some(start)
+    } else {
+        None
+    }
+}
+
+fn outer_color_open(text: &str, at: usize) -> Option<usize> {
+    outer_span_open(text, at)
+}
+
+fn inner_color_open(slice: &str) -> Option<usize> {
+    let rest = slice.strip_prefix("<span style=\"color:")?;
+    let end = rest.find("\">")?;
+    if rest[..end].contains('\n') {
+        return None;
+    }
+    Some("<span style=\"color:".len() + end + 2)
+}
+
+fn is_only_inline_open_markers(mut s: &str) -> bool {
+    s = s.trim();
+    while !s.is_empty() {
+        if s.starts_with("<span style=\"") {
+            if let Some(end) = s.find("\">") {
+                s = s[end + 2..].trim();
+                continue;
+            } else {
+                return false;
+            }
+        }
+        let stripped = s
+            .strip_prefix("**")
+            .or_else(|| s.strip_prefix("~~"))
+            .or_else(|| s.strip_prefix("=="))
+            .or_else(|| s.strip_prefix("<u>"))
+            .or_else(|| s.strip_prefix('`'))
+            .or_else(|| s.strip_prefix('*'));
+        if let Some(next) = stripped {
+            s = next.trim();
+        } else {
+            return false;
+        }
+    }
+    true
+}
+
+fn is_only_inline_close_markers(mut s: &str) -> bool {
+    s = s.trim();
+    while !s.is_empty() {
+        if let Some(rest) = s.strip_prefix("</span>") {
+            s = rest.trim();
+            continue;
+        }
+        let stripped = s
+            .strip_prefix("**")
+            .or_else(|| s.strip_prefix("~~"))
+            .or_else(|| s.strip_prefix("=="))
+            .or_else(|| s.strip_prefix("</u>"))
+            .or_else(|| s.strip_prefix('`'))
+            .or_else(|| s.strip_prefix('*'));
+        if let Some(next) = stripped {
+            s = next.trim();
+        } else {
+            return false;
+        }
+    }
+    true
+}
+
+fn find_enclosing_tag_prefix_at(
+    text: &str,
+    start_pos: usize,
+    end_pos: usize,
+    open_prefix: &str,
+    close_tag: &str,
+) -> Option<(Range, Range)> {
+    let before = text.get(..start_pos)?;
+    let open_idx = before.rfind(open_prefix)?;
+    if before[open_idx..].contains(close_tag) {
+        return None;
+    }
+    let tag_open_end = open_idx + text[open_idx..].find("\">")? + 2;
+    let between_before = &before[tag_open_end..];
+    if !between_before.trim().is_empty() && !is_only_inline_open_markers(between_before) {
+        return None;
+    }
+    let after = text.get(end_pos..)?;
+    let close_rel = after.find(close_tag)?;
+    let between_after = &after[..close_rel];
+    if !between_after.trim().is_empty() && !is_only_inline_close_markers(between_after) {
+        return None;
+    }
+    let close_start = end_pos + close_rel;
+    let close_end = close_start + close_tag.len();
+    if after[..close_rel].contains(open_prefix) {
+        return None;
+    }
+    Some((
+        Range::new(open_idx, tag_open_end)?,
+        Range::new(close_start, close_end)?,
+    ))
+}
+
+fn find_enclosing_tag_at(
+    text: &str,
+    start_pos: usize,
+    end_pos: usize,
+    open_tag: &str,
+    close_tag: &str,
+) -> Option<(Range, Range)> {
+    let before = text.get(..start_pos)?;
+    let open_idx = before.rfind(open_tag)?;
+    if before[open_idx..].contains(close_tag) {
+        return None;
+    }
+    let tag_open_end = open_idx + open_tag.len();
+    let after = text.get(end_pos..)?;
+    let close_rel = after.find(close_tag)?;
+    let close_start = end_pos + close_rel;
+    let close_end = close_start + close_tag.len();
+    if after[..close_rel].contains(open_tag) {
+        return None;
+    }
+    Some((
+        Range::new(open_idx, tag_open_end)?,
+        Range::new(close_start, close_end)?,
+    ))
+}
+
+/// Wraps the selection in `<span style="font-family: '{family}'">…</span>` or updates an existing font-family span.
+pub fn set_font_family(text: &str, selection: Range, family: &str) -> Option<Outcome> {
+    if !selection.is_within(text) {
+        return None;
+    }
+    const CLOSE: &str = "</span>";
+
+    if let Some((open_range, _close_range)) = find_enclosing_tag_prefix_at(
+        text,
+        selection.start,
+        selection.end,
+        "<span style=\"font-family:",
+        CLOSE,
+    ) {
+        let new_open = format!("<span style=\"font-family: '{family}'\">");
+        let patches = [Patch {
+            at: open_range,
+            with: new_open,
+        }];
+        return Some(apply(text, &patches, selection));
+    }
+
+    let sel_slice = selection.slice(text);
+    if sel_slice.starts_with("<span style=\"font-family:") && sel_slice.ends_with(CLOSE) {
+        if let Some(quote_gt) = sel_slice.find("\">") {
+            let open_len = quote_gt + 2;
+            let open_range = Range::new(selection.start, selection.start + open_len)?;
+            let new_open = format!("<span style=\"font-family: '{family}'\">");
+            let patches = [Patch {
+                at: open_range,
+                with: new_open,
+            }];
+            return Some(apply(text, &patches, selection));
+        }
+    }
+
+    let open = format!("<span style=\"font-family: '{family}'\">");
+    if selection.is_empty() {
+        let mut edited = String::with_capacity(text.len() + open.len() + CLOSE.len());
+        edited.push_str(&text[..selection.start]);
+        edited.push_str(&open);
+        edited.push_str(CLOSE);
+        edited.push_str(&text[selection.start..]);
+        return Some(Outcome {
+            text: edited,
+            selection: Range::caret(selection.start + open.len()),
+        });
+    }
+
+    let wrap = [
+        Patch::insert(selection.start, open),
+        Patch::insert(selection.end, CLOSE),
+    ];
+    Some(apply(text, &wrap, selection))
+}
+
+/// Wraps the selection in `<span style="font-size: {size_px}px">…</span>` or updates an existing font-size span.
+pub fn set_font_size(text: &str, selection: Range, size_px: u32) -> Option<Outcome> {
+    if !selection.is_within(text) {
+        return None;
+    }
+    const CLOSE: &str = "</span>";
+
+    if let Some((open_range, _close_range)) = find_enclosing_tag_prefix_at(
+        text,
+        selection.start,
+        selection.end,
+        "<span style=\"font-size:",
+        CLOSE,
+    ) {
+        let new_open = format!("<span style=\"font-size: {size_px}px\">");
+        let patches = [Patch {
+            at: open_range,
+            with: new_open,
+        }];
+        return Some(apply(text, &patches, selection));
+    }
+
+    let sel_slice = selection.slice(text);
+    if sel_slice.starts_with("<span style=\"font-size:") && sel_slice.ends_with(CLOSE) {
+        if let Some(quote_gt) = sel_slice.find("\">") {
+            let open_len = quote_gt + 2;
+            let open_range = Range::new(selection.start, selection.start + open_len)?;
+            let new_open = format!("<span style=\"font-size: {size_px}px\">");
+            let patches = [Patch {
+                at: open_range,
+                with: new_open,
+            }];
+            return Some(apply(text, &patches, selection));
+        }
+    }
+
+    let open = format!("<span style=\"font-size: {size_px}px\">");
+    if selection.is_empty() {
+        let mut edited = String::with_capacity(text.len() + open.len() + CLOSE.len());
+        edited.push_str(&text[..selection.start]);
+        edited.push_str(&open);
+        edited.push_str(CLOSE);
+        edited.push_str(&text[selection.start..]);
+        return Some(Outcome {
+            text: edited,
+            selection: Range::caret(selection.start + open.len()),
+        });
+    }
+
+    let wrap = [
+        Patch::insert(selection.start, open),
+        Patch::insert(selection.end, CLOSE),
+    ];
+    Some(apply(text, &wrap, selection))
+}
+
+fn remove_span_style_tags(text: &str, selection: Range) -> Option<Outcome> {
+    if !selection.is_within(text) {
+        return None;
+    }
+    // 1. Remove all enclosing <span style="...">...</span> tags
+    let mut text_curr = text.to_string();
+    let mut sel_curr = selection;
+    while let Some((open_range, close_range)) = find_enclosing_tag_prefix_at(
+        &text_curr,
+        sel_curr.start,
+        sel_curr.end,
+        "<span style=\"",
+        "</span>",
+    ) {
+        let patches = [Patch::delete(open_range), Patch::delete(close_range)];
+        let outcome = apply(&text_curr, &patches, sel_curr);
+        text_curr = outcome.text;
+        sel_curr = outcome.selection;
+    }
+
+    // 2. Remove all internal `<span style="...">...</span>` within the selection
+    let window = sel_curr.slice(&text_curr);
+    let mut patches = Vec::new();
+    let mut cursor = 0usize;
+    const PREFIX: &str = "<span style=\"";
+    const CLOSE: &str = "</span>";
+    while let Some(offset) = window[cursor..].find(PREFIX) {
+        let open_start = cursor + offset;
+        let after_prefix = &window[open_start + PREFIX.len()..];
+        let Some(quote_end) = after_prefix.find("\">") else {
+            cursor = open_start + PREFIX.len();
+            continue;
+        };
+        let open_end = open_start + PREFIX.len() + quote_end + 2;
+        let Some(close_rel) = window[open_end..].find(CLOSE) else {
+            patches.push(Patch::delete(Range::new(
+                sel_curr.start + open_start,
+                sel_curr.start + open_end,
+            )?));
+            cursor = open_end;
+            continue;
+        };
+        let close_start = open_end + close_rel;
+        let close_end = close_start + CLOSE.len();
+        patches.push(Patch::delete(Range::new(
+            sel_curr.start + open_start,
+            sel_curr.start + open_end,
+        )?));
+        patches.push(Patch::delete(Range::new(
+            sel_curr.start + close_start,
+            sel_curr.start + close_end,
+        )?));
+        cursor = close_end;
+    }
+    if patches.is_empty() {
+        return Some(Outcome {
+            text: text_curr,
+            selection: sel_curr,
+        });
+    }
+    Some(apply(&text_curr, &patches, sel_curr))
+}
+
+fn remove_color_spans(text: &str, selection: Range) -> Option<Outcome> {
+    remove_span_style_tags(text, selection)
 }
 
 /// Sets every line the selection touches to `heading`, or back to body text when
@@ -198,6 +785,61 @@ pub fn set_heading(text: &str, selection: Range, heading: Heading) -> Option<Out
         }
     }
 
+    Some(apply(text, &patches, selection))
+}
+
+/// Adjusts the heading level of the selection upward (larger text) or downward (smaller text).
+/// Returns `None` if the text cannot be adjusted further (e.g. already H1 when increasing,
+/// or already Body when decreasing).
+pub fn step_heading_level(text: &str, selection: Range, increase: bool) -> Option<Outcome> {
+    if !selection.is_within(text) {
+        return None;
+    }
+    let lines = lines_covering(text, selection);
+    if lines.is_empty() {
+        return None;
+    }
+    let current = Heading::of(lines[0].slice(text));
+    let target = if increase {
+        match current {
+            Heading::Body => Heading::Level(3),
+            Heading::Level(l) if l > 1 => Heading::Level(l - 1),
+            Heading::Level(1) => return None,
+            _ => Heading::Level(1),
+        }
+    } else {
+        match current {
+            Heading::Level(l) if l < 3 => Heading::Level(l + 1),
+            Heading::Level(_) => Heading::Body,
+            Heading::Body => return None,
+        }
+    };
+    if target == current {
+        return None;
+    }
+    let prefix = target.prefix();
+    let mut patches = Vec::new();
+    for line in lines {
+        let content = line.slice(text);
+        match (block_prefix(content), prefix.as_str()) {
+            (None, "") => {}
+            (None, replacement) => {
+                patches.push(Patch::insert(line.start + indent_len(content), replacement));
+            }
+            (Some((at, len)), "") => {
+                patches.push(Patch::delete(Range::new(
+                    line.start + at,
+                    line.start + at + len,
+                )?));
+            }
+            (Some((at, len)), replacement) => {
+                patches.push(Patch {
+                    at: Range::new(line.start + at, line.start + at + len)?,
+                    with: replacement.to_string(),
+                });
+            }
+        }
+    }
     Some(apply(text, &patches, selection))
 }
 
@@ -277,11 +919,78 @@ pub fn clear_formatting(text: &str, selection: Range) -> Option<Outcome> {
     if !selection.is_within(text) {
         return None;
     }
-    let mut outcome = strip_block_prefixes(text, selection)?;
-    for marker in ["**", "~~"] {
-        outcome = remove_pairs(&outcome.text, outcome.selection, marker)?;
+    // Expand selection across any inline wrappers immediately enclosing it so
+    // clearing formatting in Rich Text mode strips outer tags around the word too.
+    let mut expanded = selection;
+    if !expanded.is_empty() {
+        while let Some((left, right)) = step_out_one_wrapper(text, expanded.start, expanded.end) {
+            if let Some(next) = Range::new(left, right) {
+                expanded = next;
+            } else {
+                break;
+            }
+        }
     }
-    remove_star_pairs(&outcome.text, outcome.selection)
+    let mut outcome = strip_block_prefixes(text, expanded)?;
+    for _ in 0..8 {
+        let prev_text = outcome.text.clone();
+        outcome = remove_span_style_tags(&outcome.text, outcome.selection)?;
+        outcome = remove_underline_tags(&outcome.text, outcome.selection)?;
+        for marker in ["**", "~~", "==", "`"] {
+            outcome = remove_pairs(&outcome.text, outcome.selection, marker)?;
+        }
+        outcome = remove_star_pairs(&outcome.text, outcome.selection)?;
+        if outcome.text == prev_text {
+            break;
+        }
+    }
+    Some(outcome)
+}
+
+fn remove_underline_tags(text: &str, selection: Range) -> Option<Outcome> {
+    if !selection.is_within(text) {
+        return None;
+    }
+    // 1. Remove all enclosing <u>...</u> tags
+    let mut text_curr = text.to_string();
+    let mut sel_curr = selection;
+    while let Some((open_range, close_range)) =
+        find_enclosing_tag_at(&text_curr, sel_curr.start, sel_curr.end, "<u>", "</u>")
+    {
+        let patches = [Patch::delete(open_range), Patch::delete(close_range)];
+        let outcome = apply(&text_curr, &patches, sel_curr);
+        text_curr = outcome.text;
+        sel_curr = outcome.selection;
+    }
+
+    let window = sel_curr.slice(&text_curr);
+    let mut patches = Vec::new();
+    let mut cursor = 0usize;
+    while let Some(open_rel) = window[cursor..].find("<u>") {
+        let open_start = cursor + open_rel;
+        let open_end = open_start + 3;
+        let Some(close_rel) = window[open_end..].find("</u>") else {
+            break;
+        };
+        let close_start = open_end + close_rel;
+        let close_end = close_start + 4;
+        patches.push(Patch::delete(Range::new(
+            sel_curr.start + open_start,
+            sel_curr.start + open_end,
+        )?));
+        patches.push(Patch::delete(Range::new(
+            sel_curr.start + close_start,
+            sel_curr.start + close_end,
+        )?));
+        cursor = close_end;
+    }
+    if patches.is_empty() {
+        return Some(Outcome {
+            text: text_curr,
+            selection: sel_curr,
+        });
+    }
+    Some(apply(&text_curr, &patches, sel_curr))
 }
 
 /// Wraps the selection as a Markdown link label (`NC-M007`).
@@ -309,6 +1018,178 @@ pub fn insert_link(text: &str, selection: Range, url: &str) -> Option<Outcome> {
         }],
         selection,
     ))
+}
+
+/// Wraps the selection as a Markdown image (`![alt](url)`).
+///
+/// With a selection the result is `![selected text](url)` and the selection covers
+/// the whole image syntax. With a caret an empty alt label and target are written
+/// and the caret is left inside the brackets (`![|]()`), ready to type.
+pub fn insert_image(text: &str, selection: Range, url: &str) -> Option<Outcome> {
+    if !selection.is_within(text) {
+        return None;
+    }
+    let written = format!("![{}]({url})", selection.slice(text));
+    if selection.is_empty() {
+        let outcome = apply(text, &[Patch::insert(selection.start, written)], selection);
+        return Some(Outcome {
+            selection: Range::caret(outcome.selection.start + 2),
+            ..outcome
+        });
+    }
+    Some(apply(
+        text,
+        &[Patch {
+            at: selection,
+            with: written,
+        }],
+        selection,
+    ))
+}
+
+/// Toggles a GFM task-list prefix (`- [ ] `) on every line the selection touches,
+/// or strips it when every touched line already carries a task marker (`- [ ] ` or `- [x] `).
+pub fn toggle_checklist(text: &str, selection: Range) -> Option<Outcome> {
+    if !selection.is_within(text) {
+        return None;
+    }
+    let lines = lines_covering(text, selection);
+    if lines.is_empty() {
+        return None;
+    }
+
+    let stripping = lines
+        .iter()
+        .all(|line| checklist_prefix(line.slice(text)).is_some());
+
+    let mut patches = Vec::new();
+    for line in &lines {
+        let content = line.slice(text);
+        if stripping {
+            let Some((at, len)) = checklist_prefix(content) else {
+                continue;
+            };
+            patches.push(Patch::delete(Range::new(
+                line.start + at,
+                line.start + at + len,
+            )?));
+            continue;
+        }
+        let marker = "- [ ] ".to_string();
+        if let Some((at, len)) = checklist_prefix(content).or_else(|| block_prefix(content)) {
+            patches.push(Patch {
+                at: Range::new(line.start + at, line.start + at + len)?,
+                with: marker,
+            });
+        } else {
+            patches.push(Patch::insert(line.start + indent_len(content), marker));
+        }
+    }
+
+    Some(apply(text, &patches, selection))
+}
+
+/// Toggles a blockquote prefix (`> `) on every line the selection touches,
+/// or strips it when every touched line already starts with a quote marker.
+pub fn toggle_quote(text: &str, selection: Range) -> Option<Outcome> {
+    if !selection.is_within(text) {
+        return None;
+    }
+    let lines = lines_covering(text, selection);
+    if lines.is_empty() {
+        return None;
+    }
+
+    let stripping = lines
+        .iter()
+        .all(|line| quote_prefix(line.slice(text)).is_some());
+
+    let mut patches = Vec::new();
+    for line in &lines {
+        let content = line.slice(text);
+        if stripping {
+            let Some((at, len)) = quote_prefix(content) else {
+                continue;
+            };
+            patches.push(Patch::delete(Range::new(
+                line.start + at,
+                line.start + at + len,
+            )?));
+            continue;
+        }
+        if quote_prefix(content).is_some() {
+            continue;
+        }
+        let marker = "> ".to_string();
+        match block_prefix(content) {
+            None => patches.push(Patch::insert(line.start + indent_len(content), marker)),
+            Some((at, len)) => patches.push(Patch {
+                at: Range::new(line.start + at, line.start + at + len)?,
+                with: marker,
+            }),
+        }
+    }
+
+    Some(apply(text, &patches, selection))
+}
+
+/// Toggles inline code (`` `...` ``) for a single-line selection or caret, or wraps/unwraps
+/// a multi-line selection in a fenced code block (```` ```\n...\n``` ````).
+pub fn toggle_code(text: &str, selection: Range) -> Option<Outcome> {
+    if !selection.is_within(text) {
+        return None;
+    }
+    if !selection.slice(text).contains('\n') {
+        return toggle_inline(text, selection, Inline::Code);
+    }
+
+    let open = "```\n";
+    let close = "\n```";
+    if preceded_by(text, selection.start, open) && followed_by(text, selection.end, close) {
+        let outer = [
+            Patch::delete(Range::new(selection.start - open.len(), selection.start)?),
+            Patch::delete(Range::new(selection.end, selection.end + close.len())?),
+        ];
+        return Some(apply(text, &outer, selection));
+    }
+    if selection.len() > open.len() + close.len()
+        && followed_by(text, selection.start, open)
+        && preceded_by(text, selection.end, close)
+    {
+        let inner = [
+            Patch::delete(Range::new(selection.start, selection.start + open.len())?),
+            Patch::delete(Range::new(selection.end - close.len(), selection.end)?),
+        ];
+        return Some(apply(text, &inner, selection));
+    }
+
+    let wrap = [
+        Patch::insert(selection.start, open),
+        Patch::insert(selection.end, close),
+    ];
+    Some(apply(text, &wrap, selection))
+}
+
+/// Inserts a Markdown horizontal rule (`---`) at the selection and places the caret after it.
+pub fn insert_horizontal_rule(text: &str, selection: Range) -> Option<Outcome> {
+    if !selection.is_within(text) {
+        return None;
+    }
+    let at_line_start =
+        selection.start == 0 || text.as_bytes().get(selection.start - 1) == Some(&b'\n');
+    let written = if at_line_start { "---\n" } else { "\n---\n" };
+    let outcome = apply(
+        text,
+        &[Patch {
+            at: selection,
+            with: written.to_string(),
+        }],
+        selection,
+    );
+    Some(Outcome {
+        selection: Range::caret(outcome.selection.end),
+        ..outcome
+    })
 }
 
 /// Writes a GitHub-flavoured table: a header row, a separator row, and `rows` body
@@ -451,7 +1332,7 @@ fn count_cells(line: &str) -> usize {
 /// that line in — that is where the caret sits after Shift+Down at the end of a
 /// line, and the user means the line above. An empty one covers the line it sits
 /// in.
-fn lines_covering(text: &str, selection: Range) -> Vec<Range> {
+pub fn lines_covering(text: &str, selection: Range) -> Vec<Range> {
     let mut lines = Vec::new();
     let mut start = 0usize;
     for (index, byte) in text.bytes().enumerate() {
@@ -689,6 +1570,25 @@ pub(crate) fn quote_prefix(line: &str) -> Option<(usize, usize)> {
         .take_while(|byte| *byte == b' ' || *byte == b'\t')
         .count();
     Some((indent, 1 + spaces))
+}
+
+/// The GFM task-list marker (`- [ ] ` or `- [x] `) that leads a line, if any.
+fn checklist_prefix(line: &str) -> Option<(usize, usize)> {
+    let indent = indent_len(line);
+    let rest = line.get(indent..)?;
+    for prefix in ["- [ ]", "- [x]", "- [X]"] {
+        if let Some(after) = rest.strip_prefix(prefix) {
+            if !(after.is_empty() || after.starts_with(' ') || after.starts_with('\t')) {
+                continue;
+            }
+            let spaces = after
+                .bytes()
+                .take_while(|byte| *byte == b' ' || *byte == b'\t')
+                .count();
+            return Some((indent, prefix.len() + spaces));
+        }
+    }
+    None
 }
 
 /// The block-level marker a line leads with, whichever kind it is.

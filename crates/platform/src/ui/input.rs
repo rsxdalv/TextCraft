@@ -139,6 +139,8 @@ fn nc_key(key: Key) -> Option<NcKey> {
         Key::Space => NcKey::Space,
         Key::Enter => NcKey::Enter,
         Key::Backspace => NcKey::Backspace,
+        Key::ArrowUp => NcKey::Up,
+        Key::ArrowDown => NcKey::Down,
         _ => return None,
     })
 }

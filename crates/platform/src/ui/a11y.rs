@@ -316,18 +316,37 @@ mod tests {
                 "File",
                 "Edit",
                 "View",
+                "Insert",
+                "Format",
                 "Paragraph style",
-                "Lists",
                 "Bold",
                 "Italic",
+                "Underline",
                 "Strikethrough",
+                "Highlight",
+                "Text color",
+                "Lists",
+                "Task list",
+                "Blockquote",
+                "Code",
+                "Horizontal rule",
                 "Insert a link",
+                "Insert an image",
                 "Insert a table",
                 "Clear all formatting",
+                "Font family",
+                "Decrease font size",
+                "Increase font size",
+                "Raw view",
+                "Split view",
+                "Preview",
                 "Settings",
-                "Account",
+                "Editor mode",
                 "Send feedback",
+                "Toggle theme",
                 "AI",
+                "Switch to Untitled.txt",
+                "New file",
                 "Untitled",
             ]
         );
@@ -392,7 +411,7 @@ mod tests {
         // "Dark" and "JetBrains Mono" do not say which setting they belong to.
         // Both halves are asserted by moving the settings, so what passes is the
         // name staying put while the value follows it.
-        shell.theme = AppTheme::Light;
+        shell.theme = AppTheme::Dark;
         shell.font_family = FAMILIES[1];
         shell.opening = OpenBehavior::ReplaceTab;
         let expected = [

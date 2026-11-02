@@ -51,7 +51,7 @@ Packages are on the [releases page](https://github.com/rsxdalv/TextCraft/release
 | --- | --- |
 | Windows x64 | `.msi` installer, or a portable `.zip` |
 | macOS (Apple silicon and Intel) | `TextCraft.app` in a `.zip` |
-| Linux x86_64 | `.tar.gz` with the program, a `.desktop` launcher and an icon (needs glibc 2.39 or newer) |
+| Linux x86_64 | `.deb` installer (Debian / Ubuntu / Mint), `.tar.gz` portable bundle, or Flatpak |
 
 The builds are not code-signed, so the first launch asks you to confirm it. On Windows,
 choose **More info**, then **Run anyway**. On macOS, open System Settings, Privacy &

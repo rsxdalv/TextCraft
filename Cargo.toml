@@ -38,7 +38,7 @@ egui = "0.36"
 # The operating system's own Open / Save As dialogs.
 rfd = "0.17"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
-egui_extras = { version = "0.36", default-features = false, features = ["svg"] }
+egui_extras = { version = "0.36", default-features = false, features = ["svg", "all_loaders"] }
 
 # Shared egui components from the Craft suite (icons, tab fitting, toolbar fitting).
 # Pinned to the revision GridCraft builds against.

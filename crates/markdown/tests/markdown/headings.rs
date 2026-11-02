@@ -104,3 +104,61 @@ fn the_written_heading_reads_back_as_that_level() {
     assert_eq!(read[0].kind, BlockKind::Heading(2));
     assert_eq!(read[0].content(), "Title");
 }
+
+#[test]
+fn stepping_heading_level_promotes_and_demotes_headings() {
+    use nc_markdown::step_heading_level;
+
+    let text = "Title";
+    let sel = selection_of(text, "Title");
+
+    // Body -> H3
+    let h3 = step_heading_level(text, sel, true).unwrap();
+    assert_eq!(h3.text, "### Title");
+
+    // H3 -> H2
+    let sel_h3 = selection_of(&h3.text, "Title");
+    let h2 = step_heading_level(&h3.text, sel_h3, true).unwrap();
+    assert_eq!(h2.text, "## Title");
+
+    // H2 -> H1
+    let sel_h2 = selection_of(&h2.text, "Title");
+    let h1 = step_heading_level(&h2.text, sel_h2, true).unwrap();
+    assert_eq!(h1.text, "# Title");
+
+    // H1 cannot increase further
+    let sel_h1 = selection_of(&h1.text, "Title");
+    assert!(step_heading_level(&h1.text, sel_h1, true).is_none());
+
+    // H1 -> H2
+    let demote_h2 = step_heading_level(&h1.text, sel_h1, false).unwrap();
+    assert_eq!(demote_h2.text, "## Title");
+
+    // H2 -> H3
+    let demote_h3 = step_heading_level(
+        &demote_h2.text,
+        selection_of(&demote_h2.text, "Title"),
+        false,
+    )
+    .unwrap();
+    assert_eq!(demote_h3.text, "### Title");
+
+    // H3 -> Body
+    let demote_body = step_heading_level(
+        &demote_h3.text,
+        selection_of(&demote_h3.text, "Title"),
+        false,
+    )
+    .unwrap();
+    assert_eq!(demote_body.text, "Title");
+
+    // Body cannot decrease further
+    assert!(
+        step_heading_level(
+            &demote_body.text,
+            selection_of(&demote_body.text, "Title"),
+            false
+        )
+        .is_none()
+    );
+}

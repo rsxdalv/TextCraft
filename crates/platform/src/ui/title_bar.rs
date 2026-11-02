@@ -19,9 +19,9 @@ use egui::{
     UiBuilder, Vec2, ViewportCommand, WidgetType, pos2, vec2,
 };
 
-use crate::ui::state::{DocKind, Shell, Tab};
+use crate::ui::state::{AppLanguage, DocKind, Shell, Tab};
 use crate::ui::theme::Palette;
-use crate::ui::{a11y, actions, icons, menu_bar, spacing};
+use crate::ui::{a11y, actions, i18n, icons, menu_bar, spacing};
 use nc_commands::{CommandId, MenuItem, build_tab_context_menu};
 
 /// The height of the title bar, in points.
@@ -36,8 +36,8 @@ const DRAG_GAP: f32 = 48.0;
 
 /// The height of a tab; its bottom edge is the bottom edge of the bar.
 const TAB_HEIGHT: f32 = 30.0;
-/// The app icon's edge.
-const ICON_SIZE: f32 = 16.0;
+/// The app icon's edge (`w-6 h-6` = 24pt in `gui2`).
+const ICON_SIZE: f32 = 24.0;
 /// The narrowest a tab is squeezed to before the strip starts scrolling.
 const MIN_TAB_WIDTH: f32 = 84.0;
 /// The width of every tab while the strip scrolls.
@@ -119,6 +119,12 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context) {
             let mut chosen: Option<CommandId> = None;
             let tab_menu = build_tab_context_menu(shell.availability());
             let palette = shell.palette;
+
+            ui.painter().hline(
+                bar.x_range(),
+                bar.bottom() - 0.5,
+                Stroke::new(1.0, palette.line),
+            );
 
             // Everything but the caption buttons sits on the bottom edge.
             let band_top = bar.bottom() - TAB_HEIGHT;
@@ -240,7 +246,15 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context) {
                     rect: *rect,
                     active: index == shell.active,
                 };
-                let hit = tab_widget(&mut strip, tab, slot, palette, &tab_menu, &mut chosen);
+                let hit = tab_widget(
+                    &mut strip,
+                    tab,
+                    slot,
+                    palette,
+                    shell.language,
+                    &tab_menu,
+                    &mut chosen,
+                );
                 if hit.close {
                     to_close = Some(index);
                 } else if hit.activate || hit.menu {
@@ -302,7 +316,8 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context) {
                 vec2(NEW_TAB_WIDTH, 26.0),
             );
             let new_tab = ui.interact(plus_rect, ui.id().with("new_tab"), Sense::click());
-            a11y::label(&new_tab, WidgetType::Button, "New tab");
+            let new_tab_label = i18n::tr(shell.language, "New tab");
+            a11y::label(&new_tab, WidgetType::Button, new_tab_label);
             if new_tab.hovered() {
                 ui.painter()
                     .rect_filled(plus_rect, CornerRadius::same(4), palette.hover);
@@ -316,7 +331,7 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context) {
             if new_tab.clicked() {
                 shell.open_tab(DocKind::Plain);
             }
-            let _ = new_tab.on_hover_text("New tab");
+            let _ = new_tab.on_hover_text(new_tab_label);
 
             caption_buttons(shell, ui, ctx, bar);
 
@@ -409,10 +424,10 @@ fn caption_buttons(shell: &mut Shell, ui: &mut egui::Ui, ctx: &Context, bar: Rec
     ] {
         let rect = rect_for(slot);
         let label = match caption {
-            Caption::Close => "Close window",
-            Caption::Maximize if maximized => "Restore window",
-            Caption::Maximize => "Maximize window",
-            Caption::Minimize => "Minimize window",
+            Caption::Close => i18n::tr(shell.language, "Close window"),
+            Caption::Maximize if maximized => i18n::tr(shell.language, "Restore window"),
+            Caption::Maximize => i18n::tr(shell.language, "Maximize window"),
+            Caption::Minimize => i18n::tr(shell.language, "Minimize window"),
         };
         let response = ui.interact(rect, ui.id().with(("caption", slot)), Sense::click());
         a11y::label(&response, WidgetType::Button, label);
@@ -501,6 +516,7 @@ fn tab_widget(
     tab: &Tab,
     slot: TabSlot,
     palette: Palette,
+    lang: AppLanguage,
     tab_menu: &[MenuItem],
     chosen: &mut Option<CommandId>,
 ) -> TabHit {
@@ -519,7 +535,7 @@ fn tab_widget(
     a11y::role(ui.ctx(), response.id, Role::Tab);
     a11y::selected(ui.ctx(), response.id, active);
     if tab.is_dirty() {
-        a11y::described(ui.ctx(), response.id, "Unsaved changes");
+        a11y::described(ui.ctx(), response.id, i18n::tr(lang, "Unsaved changes"));
     }
 
     let close_rect =
@@ -533,7 +549,9 @@ fn tab_widget(
 
     let painter = ui.painter();
     let fill = if active {
-        palette.chrome
+        palette.bg
+    } else if response.hovered() {
+        palette.row_hover
     } else {
         palette.title
     };
@@ -547,6 +565,30 @@ fn tab_widget(
         },
         fill,
     );
+    if active {
+        let border_stroke = Stroke::new(1.0, palette.border);
+        painter.line_segment(
+            [
+                pos2(rect.left(), rect.bottom()),
+                pos2(rect.left(), rect.top() + 4.0),
+            ],
+            border_stroke,
+        );
+        painter.line_segment(
+            [
+                pos2(rect.left() + 4.0, rect.top() + 0.5),
+                pos2(rect.right() - 4.0, rect.top() + 0.5),
+            ],
+            border_stroke,
+        );
+        painter.line_segment(
+            [
+                pos2(rect.right(), rect.top() + 4.0),
+                pos2(rect.right(), rect.bottom()),
+            ],
+            border_stroke,
+        );
+    }
 
     let text_color = if active {
         palette.text
@@ -561,12 +603,12 @@ fn tab_widget(
         text_color,
     );
 
-    // An unsaved change shows as a dot where the close button sits, the way a
-    // tab strip usually reports it (`docs/ui-reference.md` §1).
+    // An unsaved change shows as an accent dot where the close button sits
+    // (`docs/ui-reference.md` §1).
     // The dot gives way to the close glyph while the pointer is on the button, so the
     // two never overlap and a dirty tab can still be closed by what it looks like.
     if tab.is_dirty() && !close.hovered() {
-        painter.circle_filled(close_rect.center(), 3.0, palette.text_dim);
+        painter.circle_filled(close_rect.center(), 3.0, palette.accent);
     }
 
     if (active || response.hovered()) && (!tab.is_dirty() || close.hovered()) {
@@ -593,7 +635,7 @@ fn tab_widget(
                 } => {
                     if menu_bar::command_button(
                         ui,
-                        spec.label,
+                        i18n::tr(lang, spec.label),
                         *checked,
                         accelerator.as_deref(),
                         *enabled,

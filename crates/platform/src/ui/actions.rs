@@ -21,8 +21,8 @@ use egui::Context;
 use crate::clock;
 use crate::ui::editor;
 use crate::ui::state::{
-    DocKind, FileDialog, FileDialogMode, OpenBehavior, ParagraphStyle, PendingReplace, Prompt,
-    SaveThen, Shell, SpellDialog, Tab,
+    DocKind, EditorMode, FileDialog, FileDialogMode, MarkdownViewMode, OpenBehavior,
+    ParagraphStyle, PendingReplace, Prompt, SaveThen, Shell, SpellDialog, Tab,
 };
 use nc_commands::CommandId;
 use nc_core::Clipboard;
@@ -37,6 +37,15 @@ pub fn run(shell: &mut Shell, ctx: &Context, id: CommandId) {
         "cmd.file.new_window" => shell.new_window_request = true,
         "cmd.file.new_markdown" => shell.open_tab(DocKind::Markdown),
         "cmd.file.open" => open_file_dialog(shell),
+        "cmd.file.open_folder" => open_folder_dialog(shell),
+        "cmd.file.reopen_closed_tab" => reopen_closed_tab(shell),
+        "cmd.file.revert" => reload_active_tab(shell),
+        "cmd.file.copy_path" => copy_file_path(shell, ctx),
+        "cmd.file.reveal_in_explorer" => reveal_in_file_manager(shell),
+        "cmd.file.clear_recent" => clear_recent_files(shell),
+        "cmd.file.close_other_tabs" => close_other_tabs(shell),
+        "cmd.file.close_all_tabs" => close_all_tabs(shell),
+        "cmd.file.export_html" => export_html_dialog(shell),
         "cmd.file.save" => save(shell),
         "cmd.file.save_as" => save_as_dialog(shell),
         "cmd.file.save_all" => save_all(shell),
@@ -49,17 +58,40 @@ pub fn run(shell: &mut Shell, ctx: &Context, id: CommandId) {
         "cmd.edit.undo" => undo(shell),
         "cmd.edit.redo" => redo(shell),
         "cmd.edit.select_all" => select_all(shell),
+        "cmd.edit.select_line" => select_line(shell),
+        "cmd.edit.select_word" => select_word(shell),
         "cmd.edit.delete" => delete_selection(shell),
+        "cmd.edit.delete_line" => delete_line(shell),
+        "cmd.edit.duplicate" => duplicate(shell),
+        "cmd.edit.move_line_up" => move_line_up(shell),
+        "cmd.edit.move_line_down" => move_line_down(shell),
+        "cmd.edit.join_lines" => join_lines(shell),
+        "cmd.edit.toggle_comment" => toggle_comment(shell),
+        "cmd.edit.transform_upper" => transform_case(shell, nc_core::CaseKind::Upper),
+        "cmd.edit.transform_lower" => transform_case(shell, nc_core::CaseKind::Lower),
+        "cmd.edit.transform_title" => transform_case(shell, nc_core::CaseKind::Title),
+        "cmd.edit.sort_lines_asc" => sort_lines(shell, true),
+        "cmd.edit.sort_lines_desc" => sort_lines(shell, false),
+        "cmd.edit.trim_trailing" => trim_trailing_whitespace(shell),
         "cmd.edit.cut" => cut(shell, ctx),
         "cmd.edit.copy" => copy(shell, ctx),
         "cmd.edit.paste" => request_paste(ctx),
         "cmd.edit.time_date" => insert_time_date(shell, clock::now_utc()),
         "cmd.view.status_bar" => shell.status_bar_visible = !shell.status_bar_visible,
+        "cmd.view.sidebar" => shell.sidebar_visible = !shell.sidebar_visible,
         "cmd.view.word_wrap" => shell.word_wrap = !shell.word_wrap,
         "cmd.view.zoom_in" => shell.zoom = (shell.zoom + 10).min(500),
         "cmd.view.zoom_out" => shell.zoom = shell.zoom.saturating_sub(10).max(10),
         "cmd.view.zoom_reset" => shell.zoom = 100,
         "cmd.view.md_source" => back_to_source(shell),
+        "cmd.view.md_split" => {
+            if let Some(tab) = shell
+                .active_tab_mut()
+                .filter(|tab| tab.kind == DocKind::Markdown)
+            {
+                tab.set_view_mode(MarkdownViewMode::Split);
+            }
+        }
         "cmd.view.md_formatted" => {
             // Guarded by kind rather than by availability alone: the flag means
             // "this document is being rendered", and a plain document has no
@@ -68,10 +100,11 @@ pub fn run(shell: &mut Shell, ctx: &Context, id: CommandId) {
                 .active_tab_mut()
                 .filter(|tab| tab.kind == DocKind::Markdown)
             {
-                tab.formatted = true;
+                tab.set_view_mode(MarkdownViewMode::Preview);
             }
         }
         "cmd.app.settings" => shell.show_settings = !shell.show_settings,
+        "cmd.view.toggle_editor_mode" => toggle_editor_mode(shell),
         "cmd.edit.find" => open_find(shell, false),
         "cmd.edit.replace" => open_find(shell, true),
         "cmd.edit.find_next" => search_step(shell, Direction::Forward),
@@ -82,12 +115,37 @@ pub fn run(shell: &mut Shell, ctx: &Context, id: CommandId) {
         // The engine decides the bytes; `apply_format` writes them.
         "cmd.md.bold" => format_inline(shell, Inline::Bold),
         "cmd.md.italic" => format_inline(shell, Inline::Italic),
+        "cmd.md.underline" => format_inline(shell, Inline::Underline),
         "cmd.md.strike" => format_inline(shell, Inline::Strike),
-        "cmd.md.link" => apply_format(shell, |text, selection| {
-            // The URL prompt is not built yet, so the command writes the syntax
-            // and leaves the caret between the parentheses to type into.
-            nc_markdown::insert_link(text, selection, "")
-        }),
+        "cmd.md.highlight" => format_inline(shell, Inline::Highlight),
+        "cmd.md.text_color" => {
+            let hex = shell.text_color.hex();
+            apply_format(shell, move |text, selection| {
+                nc_markdown::set_text_color(text, selection, hex.as_deref())
+            });
+        }
+        "cmd.md.checklist" => apply_format(shell, nc_markdown::toggle_checklist),
+        "cmd.md.quote" => apply_format(shell, nc_markdown::toggle_quote),
+        "cmd.md.code" => apply_format(shell, nc_markdown::toggle_code),
+        "cmd.md.hr" => apply_format(shell, nc_markdown::insert_horizontal_rule),
+        "cmd.md.image" => {
+            if shell.native_dialogs {
+                open_image_dialog(shell);
+            } else {
+                apply_format(shell, |text, selection| {
+                    nc_markdown::insert_image(text, selection, "")
+                });
+            }
+        }
+        "cmd.md.link" => {
+            if shell.native_dialogs {
+                open_link_dialog(shell);
+            } else {
+                apply_format(shell, |text, selection| {
+                    nc_markdown::insert_link(text, selection, "")
+                });
+            }
+        }
         "cmd.md.table" => apply_format(shell, |text, selection| {
             // One command, both halves of NC-M008: inside a table it grows a row,
             // anywhere else it writes a new one. There is no size or direction
@@ -132,6 +190,15 @@ pub fn handles(id: CommandId) -> bool {
             | "cmd.file.new_window"
             | "cmd.file.new_markdown"
             | "cmd.file.open"
+            | "cmd.file.open_folder"
+            | "cmd.file.reopen_closed_tab"
+            | "cmd.file.revert"
+            | "cmd.file.copy_path"
+            | "cmd.file.reveal_in_explorer"
+            | "cmd.file.clear_recent"
+            | "cmd.file.close_other_tabs"
+            | "cmd.file.close_all_tabs"
+            | "cmd.file.export_html"
             | "cmd.file.save"
             | "cmd.file.save_as"
             | "cmd.file.save_all"
@@ -145,7 +212,21 @@ pub fn handles(id: CommandId) -> bool {
             | "cmd.edit.undo"
             | "cmd.edit.redo"
             | "cmd.edit.select_all"
+            | "cmd.edit.select_line"
+            | "cmd.edit.select_word"
             | "cmd.edit.delete"
+            | "cmd.edit.delete_line"
+            | "cmd.edit.duplicate"
+            | "cmd.edit.move_line_up"
+            | "cmd.edit.move_line_down"
+            | "cmd.edit.join_lines"
+            | "cmd.edit.toggle_comment"
+            | "cmd.edit.transform_upper"
+            | "cmd.edit.transform_lower"
+            | "cmd.edit.transform_title"
+            | "cmd.edit.sort_lines_asc"
+            | "cmd.edit.sort_lines_desc"
+            | "cmd.edit.trim_trailing"
             | "cmd.edit.cut"
             | "cmd.edit.copy"
             | "cmd.edit.paste"
@@ -157,12 +238,15 @@ pub fn handles(id: CommandId) -> bool {
             | "cmd.edit.go_to"
             | "cmd.edit.spell_suggest"
             | "cmd.view.status_bar"
+            | "cmd.view.sidebar"
             | "cmd.view.word_wrap"
             | "cmd.view.zoom_in"
             | "cmd.view.zoom_out"
             | "cmd.view.zoom_reset"
             | "cmd.view.md_source"
+            | "cmd.view.md_split"
             | "cmd.view.md_formatted"
+            | "cmd.view.toggle_editor_mode"
             | "cmd.app.settings"
             | "cmd.format.title"
             | "cmd.format.subtitle"
@@ -173,7 +257,15 @@ pub fn handles(id: CommandId) -> bool {
             | "cmd.format.body"
             | "cmd.md.bold"
             | "cmd.md.italic"
+            | "cmd.md.underline"
             | "cmd.md.strike"
+            | "cmd.md.highlight"
+            | "cmd.md.text_color"
+            | "cmd.md.checklist"
+            | "cmd.md.quote"
+            | "cmd.md.code"
+            | "cmd.md.hr"
+            | "cmd.md.image"
             | "cmd.md.link"
             | "cmd.md.table"
             | "cmd.md.clear"
@@ -280,6 +372,169 @@ pub fn insert_time_date(shell: &mut Shell, moment: TimeDate) {
     sync_caret_to_document(shell);
 }
 
+/// Duplicates the current selection, or the current line if there is no selection (`Ctrl+D`).
+pub fn duplicate(shell: &mut Shell) {
+    if let Some(tab) = shell.active_tab_mut() {
+        tab.document_mut().duplicate_current();
+    }
+    sync_caret_to_document(shell);
+}
+
+/// Deletes the entire current line (`Ctrl+Shift+K`).
+pub fn delete_line(shell: &mut Shell) {
+    if let Some(tab) = shell.active_tab_mut() {
+        tab.document_mut().delete_line();
+    }
+    sync_caret_to_document(shell);
+}
+
+/// Swaps the current line with the line above (`Alt+Up`).
+pub fn move_line_up(shell: &mut Shell) {
+    if let Some(tab) = shell.active_tab_mut() {
+        tab.document_mut().move_line_up();
+    }
+    sync_caret_to_document(shell);
+}
+
+/// Swaps the current line with the line below (`Alt+Down`).
+pub fn move_line_down(shell: &mut Shell) {
+    if let Some(tab) = shell.active_tab_mut() {
+        tab.document_mut().move_line_down();
+    }
+    sync_caret_to_document(shell);
+}
+
+/// Joins the current line with the next line (`Ctrl+J`).
+pub fn join_lines(shell: &mut Shell) {
+    if let Some(tab) = shell.active_tab_mut() {
+        tab.document_mut().join_lines();
+    }
+    sync_caret_to_document(shell);
+}
+
+/// Toggles line comments or HTML comments on the current selection or line (`Ctrl+/`).
+pub fn toggle_comment(shell: &mut Shell) {
+    let Some(tab) = shell.active_tab_mut() else {
+        return;
+    };
+    let is_markdown = tab.kind == DocKind::Markdown;
+    let doc = tab.document_mut();
+    let range = doc.selection().range();
+    let (first_line, last_line) = if doc.has_selection() {
+        (
+            doc.buffer().line_of(range.start),
+            doc.buffer().line_of(range.end),
+        )
+    } else {
+        let l = doc.buffer().line_of(doc.caret());
+        (l, l)
+    };
+
+    if is_markdown {
+        let (start, end) = if doc.has_selection() {
+            (range.start, range.end)
+        } else {
+            let s = doc.buffer().line_start(first_line).unwrap_or(0);
+            let e = doc.buffer().line_end(first_line).unwrap_or(0);
+            (s, e)
+        };
+        if let Some(text) = doc.buffer().slice(start..end).map(ToOwned::to_owned) {
+            let trimmed = text.trim();
+            if trimmed.starts_with("<!--") && trimmed.ends_with("-->") {
+                let inner = trimmed[4..trimmed.len() - 3].trim().to_owned();
+                doc.replace_range(start..end, &inner);
+            } else {
+                let wrapped = format!("<!-- {text} -->");
+                doc.replace_range(start..end, &wrapped);
+            }
+        }
+    } else {
+        let mut all_commented = true;
+        for i in first_line..=last_line {
+            if let Some(line) = doc.buffer().line(i) {
+                let trimmed = line.trim_start();
+                if !trimmed.is_empty() && !trimmed.starts_with("//") {
+                    all_commented = false;
+                    break;
+                }
+            }
+        }
+
+        let mut replacements = Vec::new();
+        for i in first_line..=last_line {
+            let start = doc.buffer().line_start(i).unwrap_or(0);
+            let end = doc.buffer().line_end(i).unwrap_or(0);
+            if let Some(line) = doc.buffer().slice(start..end) {
+                if all_commented {
+                    let trimmed = line.trim_start();
+                    let leading_ws_len = line.len() - trimmed.len();
+                    let prefix_len = if trimmed.starts_with("// ") {
+                        3
+                    } else if trimmed.starts_with("//") {
+                        2
+                    } else {
+                        0
+                    };
+                    if prefix_len > 0 {
+                        replacements.push((
+                            start + leading_ws_len..start + leading_ws_len + prefix_len,
+                            "",
+                        ));
+                    }
+                } else {
+                    replacements.push((start..start, "// "));
+                }
+            }
+        }
+        if !replacements.is_empty() {
+            doc.replace_ranges(&replacements);
+        }
+    }
+    sync_caret_to_document(shell);
+}
+
+/// Transforms the case of the selection or current word.
+pub fn transform_case(shell: &mut Shell, case: nc_core::CaseKind) {
+    if let Some(tab) = shell.active_tab_mut() {
+        tab.document_mut().transform_case(case);
+    }
+    sync_caret_to_document(shell);
+}
+
+/// Sorts lines covered by the selection or whole document alphabetically.
+pub fn sort_lines(shell: &mut Shell, ascending: bool) {
+    if let Some(tab) = shell.active_tab_mut() {
+        tab.document_mut().sort_lines(ascending);
+    }
+    sync_caret_to_document(shell);
+}
+
+/// Trims trailing whitespace from all lines.
+pub fn trim_trailing_whitespace(shell: &mut Shell) {
+    if let Some(tab) = shell.active_tab_mut() {
+        if tab.document_mut().trim_trailing_whitespace() {
+            shell.notification = Some("Trimmed trailing whitespace".to_owned());
+        }
+    }
+    sync_caret_to_document(shell);
+}
+
+/// Selects the current line (`Ctrl+L`).
+pub fn select_line(shell: &mut Shell) {
+    if let Some(tab) = shell.active_tab_mut() {
+        tab.document_mut().select_line();
+    }
+    sync_caret_to_document(shell);
+}
+
+/// Selects the word under the caret.
+pub fn select_word(shell: &mut Shell) {
+    if let Some(tab) = shell.active_tab_mut() {
+        tab.document_mut().select_word();
+    }
+    sync_caret_to_document(shell);
+}
+
 /// The sheet body is printed at, in points.
 ///
 /// §8 collects the *sheet* — size, orientation, margins, header — and says nothing
@@ -337,12 +592,23 @@ fn send_to_printer(job: &str) -> std::io::Result<()> {
 /// Points the queued editor caret at the active document's own caret, after a
 /// shell command moved it.
 fn sync_caret_to_document(shell: &mut Shell) {
-    let Some(tab) = shell.active_tab() else {
-        return;
+    let (caret, selection) = {
+        let Some(tab) = shell.active_tab() else {
+            return;
+        };
+        let doc = tab.file.document();
+        let text = tab.text();
+        let caret = char_index(text, doc.caret());
+        let selection = if doc.has_selection() {
+            let anchor = char_index(text, doc.selection().anchor());
+            Some((caret, anchor))
+        } else {
+            Some((caret, caret))
+        };
+        (caret, selection)
     };
-    let caret = char_index(tab.text(), tab.file.document().caret());
     shell.caret = caret;
-    shell.pending_selection = Some((caret, caret));
+    shell.pending_selection = selection;
 }
 
 /// The clipboard the shell copies through, backed by `egui`.
@@ -373,6 +639,272 @@ pub fn open_go_to(shell: &mut Shell) {
     shell.go_to.line = shell.line.to_string();
     shell.go_to.open = true;
     shell.go_to.focus = true;
+}
+
+/// Opens the Insert Link dialog.
+pub fn open_link_dialog(shell: &mut Shell) {
+    let selected_text = shell
+        .active_tab()
+        .and_then(|tab| {
+            let text = tab.text();
+            let sel = tab.document().selection();
+            if sel.is_empty() {
+                None
+            } else {
+                text.get(sel.start()..sel.end()).map(str::to_string)
+            }
+        })
+        .unwrap_or_default();
+    shell.link_dialog.open(selected_text);
+}
+
+/// Opens the Insert Image dialog.
+pub fn open_image_dialog(shell: &mut Shell) {
+    let selected_alt = shell
+        .active_tab()
+        .and_then(|tab| {
+            let text = tab.text();
+            let sel = tab.document().selection();
+            if sel.is_empty() {
+                None
+            } else {
+                text.get(sel.start()..sel.end()).map(str::to_string)
+            }
+        })
+        .unwrap_or_default();
+    shell.image_dialog.open(selected_alt);
+}
+
+/// Inserts a Markdown link `[label](url)` at the selection/caret.
+pub fn apply_custom_link(shell: &mut Shell, label: &str, url: &str) {
+    let written = format!("[{label}]({url})");
+    apply_format(shell, |text, selection| {
+        let patches = [nc_markdown::Patch {
+            at: selection,
+            with: written,
+        }];
+        Some(nc_markdown::apply(text, &patches, selection))
+    });
+}
+
+/// Inserts a Markdown image `![alt](path_or_url)` at the selection/caret.
+pub fn apply_custom_image(shell: &mut Shell, alt: &str, path_or_url: &str) {
+    let written = format!("![{alt}]({path_or_url})");
+    apply_format(shell, |text, selection| {
+        let patches = [nc_markdown::Patch {
+            at: selection,
+            with: written,
+        }];
+        Some(nc_markdown::apply(text, &patches, selection))
+    });
+}
+
+/// Finds the CSS style property value at `pos` by searching enclosing `<span style="...">` tags.
+fn find_style_prop_at(text: &str, pos: usize, prop_name: &str) -> Option<String> {
+    // If caret/selection lands directly on an opening `<span style="...">` tag, inspect its styles
+    let mut check_forward = pos;
+    while check_forward < text.len() {
+        if let Some(after) = text.get(check_forward..)?.strip_prefix("<span style=\"") {
+            if let Some(quote_gt) = after.find("\">") {
+                let style_str = &after[..quote_gt];
+                for decl in style_str.split(';') {
+                    if let Some((p, v)) = decl.trim().split_once(':') {
+                        if p.trim().eq_ignore_ascii_case(prop_name) {
+                            return Some(v.trim().to_string());
+                        }
+                    }
+                }
+                check_forward += "<span style=\"".len() + quote_gt + 2;
+                continue;
+            }
+        }
+        break;
+    }
+
+    let mut check_pos = pos;
+    for _ in 0..10 {
+        let before = text.get(..check_pos)?;
+        let span_idx = before.rfind("<span style=\"")?;
+        let between = &before[span_idx..];
+        let closes = between.matches("</span>").count();
+        let opens = between.matches("<span style=\"").count();
+        if closes >= opens {
+            if span_idx == 0 {
+                return None;
+            }
+            check_pos = span_idx;
+            continue;
+        }
+        let after_prefix = &text[span_idx + "<span style=\"".len()..];
+        let quote_gt = after_prefix.find("\">")?;
+        let style_str = &after_prefix[..quote_gt];
+        for decl in style_str.split(';') {
+            let decl = decl.trim();
+            if let Some((p, v)) = decl.split_once(':') {
+                if p.trim().eq_ignore_ascii_case(prop_name) {
+                    return Some(v.trim().to_string());
+                }
+            }
+        }
+        if span_idx == 0 {
+            break;
+        }
+        check_pos = span_idx;
+    }
+    None
+}
+
+/// Detects the current font family at the caret or selection in the active tab.
+pub fn detect_current_font_family(shell: &Shell) -> &'static str {
+    let Some(tab) = shell.active_tab() else {
+        return shell.font_family;
+    };
+    let text = tab.text();
+    let sel = tab.document().selection();
+    let pos = if sel.is_empty() {
+        sel.head()
+    } else {
+        sel.start()
+    };
+    if pos <= text.len() && text.is_char_boundary(pos) {
+        if let Some(family) = find_style_prop_at(text, pos, "font-family") {
+            let unquoted = family.trim_matches(|c| c == '\'' || c == '"' || c == ' ');
+            if let Some(&bundled) = crate::ui::fonts::FAMILIES.iter().find(|&&f| f == unquoted) {
+                return bundled;
+            }
+            if let Some(sys) = crate::ui::fonts::system_fonts()
+                .iter()
+                .find(|f| f.name == unquoted)
+            {
+                return sys.name;
+            }
+        }
+    }
+    shell.font_family
+}
+
+/// Detects the current font size in pixels at the caret or selection in the active tab.
+pub fn detect_current_font_size(shell: &Shell) -> u32 {
+    let Some(tab) = shell.active_tab() else {
+        return shell.base_font_size;
+    };
+    let text = tab.text();
+    let sel = tab.document().selection();
+    let pos = if sel.is_empty() {
+        sel.head()
+    } else {
+        sel.start()
+    };
+    if pos <= text.len() && text.is_char_boundary(pos) {
+        if let Some(size) = find_style_prop_at(text, pos, "font-size") {
+            let num = size.trim_end_matches("px").trim_end_matches("pt").trim();
+            if let Ok(val) = num.parse::<u32>() {
+                return val;
+            }
+        }
+    }
+    // If text does not carry an explicit font-size span, detect heading size if on a heading line
+    if tab.kind == DocKind::Markdown {
+        let caret_byte = pos.min(text.len());
+        let caret_byte = if text.is_char_boundary(caret_byte) {
+            caret_byte
+        } else {
+            (0..caret_byte)
+                .rev()
+                .find(|&b| text.is_char_boundary(b))
+                .unwrap_or(0)
+        };
+        let line_start = text[..caret_byte].rfind('\n').map_or(0, |idx| idx + 1);
+        let line_end = text[caret_byte..]
+            .find('\n')
+            .map_or(text.len(), |idx| caret_byte + idx);
+        let line = &text[line_start..line_end];
+        let heading = match nc_markdown::Heading::of(line) {
+            nc_markdown::Heading::Body => match tab.paragraph {
+                ParagraphStyle::Title => nc_markdown::Heading::Level(1),
+                ParagraphStyle::Subtitle => nc_markdown::Heading::Level(2),
+                ParagraphStyle::Heading => nc_markdown::Heading::Level(3),
+                ParagraphStyle::Subheading => nc_markdown::Heading::Level(4),
+                ParagraphStyle::Section => nc_markdown::Heading::Level(5),
+                ParagraphStyle::Subsection => nc_markdown::Heading::Level(6),
+                ParagraphStyle::Body => nc_markdown::Heading::Body,
+            },
+            h => h,
+        };
+        match heading {
+            nc_markdown::Heading::Level(1) => return 24,
+            nc_markdown::Heading::Level(2) => return 20,
+            nc_markdown::Heading::Level(3) => return 18,
+            nc_markdown::Heading::Level(4) => return 16,
+            nc_markdown::Heading::Level(5) => return 15,
+            nc_markdown::Heading::Level(6) => return 14,
+            _ => {}
+        }
+    }
+    shell.base_font_size
+}
+
+/// Applies `family` to the selected text via `<span style="font-family: '...'">`,
+/// or changes document default `shell.font_family` if nothing is selected.
+pub fn apply_custom_font_family(shell: &mut Shell, ctx: &egui::Context, family: &str) {
+    crate::ui::fonts::ensure_font(ctx, family);
+    if let Some(tab) = shell.active_tab_mut() {
+        if tab.kind != DocKind::Markdown && !tab.file.has_path() {
+            tab.kind = DocKind::Markdown;
+        }
+    }
+    let has_selection = shell
+        .active_tab()
+        .is_some_and(|tab| tab.document().has_selection());
+
+    if has_selection {
+        apply_format(shell, |text, selection| {
+            nc_markdown::set_font_family(text, selection, family)
+        });
+    } else {
+        if let Some(&bundled) = crate::ui::fonts::FAMILIES.iter().find(|&&f| f == family) {
+            shell.font_family = bundled;
+        } else if let Some(sys) = crate::ui::fonts::system_fonts()
+            .iter()
+            .find(|f| f.name == family)
+        {
+            shell.font_family = sys.name;
+        }
+        crate::ui::fonts::apply(ctx, family);
+    }
+}
+
+/// Steps font size: adjusts `<span style="font-size: {px}px">` on selected text by 1px,
+/// or adjusts document `shell.base_font_size` by 1px when nothing is selected.
+pub fn step_font_size(shell: &mut Shell, _ctx: &egui::Context, increase: bool) {
+    if let Some(tab) = shell.active_tab_mut() {
+        if tab.kind != DocKind::Markdown && !tab.file.has_path() {
+            tab.kind = DocKind::Markdown;
+        }
+    }
+    let has_selection = shell
+        .active_tab()
+        .is_some_and(|tab| tab.document().has_selection());
+
+    if has_selection {
+        let cur_size = detect_current_font_size(shell);
+        let new_size = if increase {
+            (cur_size + 1).min(72)
+        } else {
+            cur_size.saturating_sub(1).max(8)
+        };
+        apply_format(shell, |text, selection| {
+            nc_markdown::set_font_size(text, selection, new_size)
+        });
+    } else {
+        let cur_size = shell.base_font_size;
+        let new_size = if increase {
+            (cur_size + 1).min(72)
+        } else {
+            cur_size.saturating_sub(1).max(8)
+        };
+        shell.base_font_size = new_size;
+    }
 }
 
 /// Opens the spelling dialog for the misspelled word at the caret
@@ -476,6 +1008,193 @@ pub fn open_file_dialog(shell: &mut Shell) {
     shell.file_dialog = Some(FileDialog::open());
 }
 
+/// Opens a folder picker dialog to open a workspace folder (`File ▸ Open folder...`).
+pub fn open_folder_dialog(shell: &mut Shell) {
+    if !shell.native_dialogs {
+        return;
+    }
+    if let Some(folder) = rfd::FileDialog::new()
+        .set_title("Open workspace folder")
+        .pick_folder()
+    {
+        shell.workspace_folder = Some(folder.clone());
+        shell.sidebar_visible = true;
+        let display_name = folder.file_name().map_or_else(
+            || folder.to_string_lossy().into_owned(),
+            |n| n.to_string_lossy().into_owned(),
+        );
+        shell.notification = Some(format!("Opened workspace: {display_name}"));
+    }
+}
+
+/// Reopens the last closed tab in this window (`Ctrl+Alt+T`, `File ▸ Reopen closed tab`).
+pub fn reopen_closed_tab(shell: &mut Shell) {
+    let Some(closed) = shell.closed_tabs.pop() else {
+        return;
+    };
+    if let Some(path) = closed.path {
+        open_path(shell, &path, Some((closed.encoding, closed.bom)));
+    } else {
+        let file = nc_textproc::TextFile::restore(
+            std::path::PathBuf::new(),
+            closed.encoding,
+            closed.bom,
+            closed.line_ending,
+            &closed.text,
+            false,
+        );
+        let tab = Tab::restore(file, closed.kind);
+        shell.tabs.push(tab);
+        shell.active = shell.tabs.len() - 1;
+    }
+    sync_caret_to_document(shell);
+    shell.notification = Some(format!("Reopened tab \"{}\"", closed.title));
+}
+
+/// Discards changes and reloads the active document from disk (`Ctrl+Shift+R`, `File ▸ Reload from disk`).
+pub fn reload_active_tab(shell: &mut Shell) {
+    let index = shell.active;
+    let Some(tab) = shell.tabs.get_mut(index) else {
+        return;
+    };
+    if !tab.file.has_path() {
+        return;
+    }
+    if tab.is_dirty() {
+        shell.prompt = Some(Prompt::OutsideChange {
+            tab: index,
+            path: tab.file.path().to_path_buf(),
+        });
+        return;
+    }
+    let name = tab.title();
+    match tab.file.reload() {
+        Ok(()) => {
+            sync_caret_to_document(shell);
+            shell.notification = Some(format!("Reloaded \"{name}\" from disk"));
+        }
+        Err(err) => shell.notification = Some(format!("Could not reload \"{name}\": {err}")),
+    }
+}
+
+/// Copies the absolute path of the active document to the system clipboard (`Ctrl+Alt+C`, `File ▸ Copy file path`).
+pub fn copy_file_path(shell: &mut Shell, ctx: &Context) {
+    let Some(tab) = shell.active_tab() else {
+        return;
+    };
+    if tab.file.has_path() {
+        let path_str = tab.file.path().display().to_string();
+        ctx.copy_text(path_str.clone());
+        shell.notification = Some(format!("Copied path to clipboard: {path_str}"));
+    }
+}
+
+/// Reveals the active document's containing folder in the system file manager (`File ▸ Reveal in file manager`).
+pub fn reveal_in_file_manager(shell: &mut Shell) {
+    let Some(tab) = shell.active_tab() else {
+        return;
+    };
+    if !tab.file.has_path() {
+        return;
+    }
+    let path = tab.file.path();
+    let folder = if path.is_dir() {
+        path
+    } else {
+        path.parent().unwrap_or(path)
+    };
+
+    #[cfg(target_os = "windows")]
+    let res = std::process::Command::new("explorer")
+        .arg(format!("/select,\"{}\"", path.display()))
+        .spawn();
+
+    #[cfg(target_os = "macos")]
+    let res = std::process::Command::new("open")
+        .arg("-R")
+        .arg(path)
+        .spawn();
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let res = std::process::Command::new("xdg-open").arg(folder).spawn();
+
+    match res {
+        Ok(_) => shell.notification = Some("Opened file manager".to_owned()),
+        Err(e) => shell.notification = Some(format!("Could not open file manager: {e}")),
+    }
+}
+
+/// Clears the recent files list (`File ▸ Recent ▸ Clear recent files`).
+pub fn clear_recent_files(shell: &mut Shell) {
+    shell.recent_files.clear();
+    shell.notification = Some("Recent files list cleared".to_owned());
+}
+
+/// Closes all tabs except the active one (`File ▸ Close other tabs`).
+pub fn close_other_tabs(shell: &mut Shell) {
+    let active = shell.active;
+    let mut i = shell.tabs.len();
+    while i > 0 {
+        i -= 1;
+        if i != active {
+            if shell.tabs[i].is_dirty() {
+                close_tab(shell, i);
+                return;
+            }
+            shell.close_tab(i);
+        }
+    }
+}
+
+/// Closes all open tabs, resetting to a single fresh untitled document (`File ▸ Close all tabs`).
+pub fn close_all_tabs(shell: &mut Shell) {
+    while shell.tabs.len() > 1 {
+        let last = shell.tabs.len() - 1;
+        if shell.tabs[last].is_dirty() {
+            close_tab(shell, last);
+            return;
+        }
+        shell.close_tab(last);
+    }
+    close_tab(shell, 0);
+}
+
+/// Exports the active document to a self-contained HTML file (`File ▸ Export ▸ Export as HTML`).
+pub fn export_html_dialog(shell: &mut Shell) {
+    let Some(tab) = shell.active_tab() else {
+        return;
+    };
+    let title = tab.title();
+    let text = tab.text().to_owned();
+    let default_name = format!(
+        "{}.html",
+        title.trim_end_matches(".md").trim_end_matches(".txt")
+    );
+
+    if shell.native_dialogs {
+        if let Some(save_path) = rfd::FileDialog::new()
+            .set_title("Export as HTML")
+            .set_file_name(&default_name)
+            .add_filter("HTML document", &["html", "htm"])
+            .save_file()
+        {
+            let html_content = nc_markdown::export_html(&title, &text);
+            match std::fs::write(&save_path, html_content) {
+                Ok(()) => {
+                    let display_name = save_path.file_name().map_or_else(
+                        || save_path.display().to_string(),
+                        |n| n.to_string_lossy().into_owned(),
+                    );
+                    shell.notification = Some(format!("Exported HTML to {display_name}"));
+                }
+                Err(e) => {
+                    shell.notification = Some(format!("Could not export HTML: {e}"));
+                }
+            }
+        }
+    }
+}
+
 /// Saves the active document (`File ▸ Save`, `Ctrl+S`).
 pub fn save(shell: &mut Shell) {
     save_tab(shell, shell.active, SaveThen::Keep);
@@ -516,6 +1235,8 @@ fn open_save_as(shell: &mut Shell, tab: usize) {
     };
     let name = if document.file.has_path() {
         document.title()
+    } else if let Some(ref custom) = document.custom_name {
+        custom.clone()
     } else {
         String::new()
     };
@@ -630,6 +1351,45 @@ pub fn close_tab(shell: &mut Shell, index: usize) {
         return;
     }
     shell.close_tab(index);
+}
+
+/// Renames the tab at `index` to `new_name`.
+///
+/// If the tab corresponds to a file on disk, renames the file on the filesystem
+/// and updates `tab.file`. If the tab is untitled, stores `new_name` in
+/// `tab.custom_name`. Also updates `tab.kind` if the extension indicates Markdown (.md, .markdown)
+/// or plain text (.txt).
+pub fn rename_tab(shell: &mut Shell, index: usize, new_name: &str) {
+    let new_name = new_name.trim();
+    if new_name.is_empty() {
+        return;
+    }
+    let Some(tab) = shell.tabs.get_mut(index) else {
+        return;
+    };
+    let lower = new_name.to_lowercase();
+    if lower.ends_with(".md") || lower.ends_with(".markdown") {
+        tab.kind = DocKind::Markdown;
+    } else if lower.ends_with(".txt") {
+        tab.kind = DocKind::Plain;
+    }
+    if tab.file.has_path() {
+        let old_path = tab.file.path().to_path_buf();
+        let parent = old_path.parent().unwrap_or_else(|| Path::new(""));
+        let new_path = parent.join(new_name);
+        if new_path != old_path {
+            if old_path.exists() {
+                if let Err(e) = std::fs::rename(&old_path, &new_path) {
+                    shell.notification = Some(format!("Rename failed: {e}"));
+                    return;
+                }
+            }
+            tab.file.set_path(new_path);
+            tab.custom_name = None;
+        }
+    } else {
+        tab.custom_name = Some(new_name.to_string());
+    }
 }
 
 /// Asks the window to close (`File ▸ Exit`, the title bar's ✕), prompting for
@@ -855,6 +1615,9 @@ fn write_save_as(shell: &mut Shell, tab: usize, path: &Path, encoding: Encoding,
         Some(Ok(_)) => {
             shell.file_dialog = None;
             shell.notification = None;
+            if let Some(tab_ref) = shell.tabs.get_mut(tab) {
+                tab_ref.custom_name = None;
+            }
             finish_save(shell, tab);
         }
         Some(Err(nc_textproc::Error::Encode(nc_textproc::EncodeError { characters, .. }))) => {
@@ -1208,7 +1971,7 @@ fn back_to_source(shell: &mut Shell) {
     let Some(tab) = shell.active_tab_mut() else {
         return;
     };
-    tab.formatted = false;
+    tab.set_view_mode(MarkdownViewMode::Raw);
     let selection = tab.document_mut().selection();
     let (anchor, head) = {
         let text = tab.text();
@@ -1218,6 +1981,27 @@ fn back_to_source(shell: &mut Shell) {
         )
     };
     shell.pending_selection = Some((head, anchor));
+}
+
+/// Switches between Rich Text Editor mode (`EditorMode::Text`) and Full Code Editor mode (`EditorMode::Code`),
+/// keeping the active selection in place across the transition.
+pub fn toggle_editor_mode(shell: &mut Shell) {
+    shell.editor_mode = match shell.editor_mode {
+        EditorMode::Text => EditorMode::Code,
+        EditorMode::Code => EditorMode::Text,
+    };
+    if let Some(tab) = shell.active_tab_mut() {
+        let selection = tab.document_mut().selection();
+        let (anchor, head) = {
+            let text = tab.text();
+            (
+                editor::char_index(text, selection.anchor()),
+                editor::char_index(text, selection.head()),
+            )
+        };
+        shell.caret = head;
+        shell.pending_selection = Some((head, anchor));
+    }
 }
 
 /// The ATX level a paragraph style writes.
@@ -1269,6 +2053,15 @@ fn apply_format(
     if document.replace_range(start..before_end, &outcome.text[start..after_end]) {
         document.select(outcome.selection.start, outcome.selection.end);
     }
+    let (anchor, head) = {
+        let text = tab.text();
+        (
+            editor::char_index(text, outcome.selection.start),
+            editor::char_index(text, outcome.selection.end),
+        )
+    };
+    shell.caret = head;
+    shell.pending_selection = Some((head, anchor));
 }
 
 /// Toggles `kind` around the active document's selection.
@@ -2288,5 +3081,98 @@ mod tests {
                 "{before:?} -> {after:?} split a character"
             );
         }
+    }
+
+    #[test]
+    fn apply_custom_font_family_only_modifies_selected_text() {
+        let ctx = egui::Context::default();
+        let mut shell = Shell::new();
+        *shell.tabs[0].document_mut() = nc_core::Document::from_text("hello world");
+        shell.tabs[0].document_mut().select(6, 11); // "world"
+        apply_custom_font_family(&mut shell, &ctx, "Fira Mono");
+
+        assert_eq!(
+            shell.tabs[0].text(),
+            "hello <span style=\"font-family: 'Fira Mono'\">world</span>"
+        );
+        // The unselected text "hello " remains untouched.
+        assert_eq!(shell.font_family, crate::ui::fonts::DEFAULT);
+    }
+
+    #[test]
+    fn step_font_size_increments_by_one_pixel_on_selection() {
+        let ctx = egui::Context::default();
+        let mut shell = Shell::new();
+        shell.base_font_size = 14;
+        *shell.tabs[0].document_mut() = nc_core::Document::from_text("hello world");
+        shell.tabs[0].document_mut().select(6, 11); // "world"
+
+        step_font_size(&mut shell, &ctx, true);
+        assert_eq!(
+            shell.tabs[0].text(),
+            "hello <span style=\"font-size: 15px\">world</span>"
+        );
+        assert_eq!(detect_current_font_size(&shell), 15);
+        assert_eq!(shell.zoom, 100, "zoom is untouched");
+
+        // Next click on + increments to 16px
+        step_font_size(&mut shell, &ctx, true);
+        assert_eq!(
+            shell.tabs[0].text(),
+            "hello <span style=\"font-size: 16px\">world</span>"
+        );
+        assert_eq!(detect_current_font_size(&shell), 16);
+
+        // Click on - decrements to 15px
+        step_font_size(&mut shell, &ctx, false);
+        assert_eq!(
+            shell.tabs[0].text(),
+            "hello <span style=\"font-size: 15px\">world</span>"
+        );
+        assert_eq!(detect_current_font_size(&shell), 15);
+    }
+
+    #[test]
+    fn step_font_size_without_selection_changes_base_font_size_by_one() {
+        let ctx = egui::Context::default();
+        let mut shell = Shell::new();
+        shell.base_font_size = 14;
+
+        step_font_size(&mut shell, &ctx, true);
+        assert_eq!(shell.base_font_size, 15);
+        assert_eq!(shell.zoom, 100, "zoom is untouched");
+
+        step_font_size(&mut shell, &ctx, false);
+        assert_eq!(shell.base_font_size, 14);
+    }
+
+    #[test]
+    fn rename_tab_updates_untitled_name_and_kind() {
+        let mut shell = Shell::new();
+        assert_eq!(shell.tabs[0].workspace_name(), "Untitled.txt");
+        assert_eq!(shell.tabs[0].kind, DocKind::Plain);
+
+        rename_tab(&mut shell, 0, "notes.md");
+        assert_eq!(shell.tabs[0].workspace_name(), "notes.md");
+        assert_eq!(shell.tabs[0].title(), "notes.md");
+        assert_eq!(shell.tabs[0].kind, DocKind::Markdown);
+
+        rename_tab(&mut shell, 0, "list.txt");
+        assert_eq!(shell.tabs[0].workspace_name(), "list.txt");
+        assert_eq!(shell.tabs[0].title(), "list.txt");
+        assert_eq!(shell.tabs[0].kind, DocKind::Plain);
+    }
+
+    #[test]
+    fn applying_bold_then_italic_wraps_in_triple_asterisks() {
+        let mut shell = shell_with("hello world");
+        shell.tabs[0].kind = DocKind::Markdown;
+        shell.tabs[0].document_mut().select(0, 5); // select "hello"
+
+        format_inline(&mut shell, Inline::Bold);
+        assert_eq!(shell.tabs[0].text(), "**hello** world");
+
+        format_inline(&mut shell, Inline::Italic);
+        assert_eq!(shell.tabs[0].text(), "***hello*** world");
     }
 }

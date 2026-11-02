@@ -163,6 +163,11 @@ impl TextFile {
         !self.path.as_os_str().is_empty()
     }
 
+    /// Sets the file's path (e.g. after renaming).
+    pub fn set_path(&mut self, path: impl Into<PathBuf>) {
+        self.path = path.into();
+    }
+
     /// How the bytes were read, or how the next save will write them.
     pub fn detection(&self) -> Detection {
         self.detection

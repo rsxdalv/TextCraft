@@ -32,12 +32,14 @@ where the reference capture does not reach.
 
 | Region | Content |
 | --- | --- |
-| Title bar | App icon, a back chevron, the tab strip, a run/expand glyph, the `+` new-tab button, then the window controls (minimize, maximize, close). |
-| Tab strip | One tab per document; the active tab is underlined in the accent colour; each tab carries a close `✕` (shown on the active or hovered tab), and a document with unsaved changes shows a dot where that `✕` sits. |
+| Title bar | App icon (24×24 `#0284C7` rounded tile), the tab strip, the `+` new-tab button, then the window controls (minimize, maximize, close). |
+| Tab strip | One tab per document; the active tab is elevated in the page background colour (`palette.bg`, `#FAF9F6` in Light) with top and side borders (`palette.border`, `#C7D5CF`); each tab carries a close `✕` (shown on the active or hovered tab), and a document with unsaved changes shows a pine-green accent dot (`palette.accent`, `#2D6A4F`) where that `✕` sits. |
 | Top bar | The `File` / `Edit` / `View` menus, a divider, the formatting toolbar, and the right-hand controls (AI, feedback, account, settings). |
-| Toolbar (left) | `H1` paragraph-style dropdown, `≡` list dropdown, `B`, `I`, `S`, a link glyph, a table glyph, `Aa` clear-formatting. |
-| Toolbar (right) | Sparkle (AI) dropdown, feedback icon, account avatar, settings gear. |
-| Status bar | `Ln`/`Col`, character count, an optional notification (the search notices in §5), document kind (`Plain text` / `Markdown`), zoom %, line-ending style, encoding. |
+| Toolbar (left) | `H1` paragraph-style dropdown, `B`, `I`, `U`, `S`, `Highlight`, `Text color` (`A` with active colour bar & palette), `≡` list dropdown, `Task list`, `Blockquote`, `Code`, `Horizontal rule`, `Link`, `Image`, `Table`, `Aa` clear-formatting, `Font family` dropdown, `- 14px +` font size stepper, and `Raw \| Split \| Preview` view mode selector. Uses smart compacting and progressive group-by-group overflow (`...`) in narrow windows. |
+| Toolbar (right) | Sparkle (`✨ AI ▾`) green pill dropdown, quick theme toggle (`☀️ Light` / `🌙 Dark`), feedback icon, account avatar, settings gear. |
+| Workspace sidebar | Collapsible left panel (`220pt`, `palette.sidebar_bg`, `1pt` right border `palette.line`) showing `WORKSPACE`, `<N> files`, the open document list (active item highlighted in `palette.accent` `#2D6A4F` with a `4pt` `palette.accent_border` `#1E4D38` left strip), and a `+ New File` button at the bottom. |
+| Line-numbers gutter | Left column of the source editor filled in `palette.gutter_bg` (`#F3F1EC` in Light, `#141917` in Dark) with a `1pt` right border (`palette.line`) and right-aligned 1-based line numbers in `palette.gutter_text` (`#9BA8A1` in Light, `#52605A` in Dark). |
+| Status bar | Left: `Ln`/`Col`, character count (`N characters`), word count (`W words`), and an optional notification (the search notices in §5). Right: document kind (`Plain text` / `Markdown`), zoom %, line-ending style, encoding, and sync status (`● Synced locally` / `● Unsaved changes` with a `palette.accent` dot). |
 
 The window is drawn without OS decorations: the app draws one title row holding
 the icon, the tab strip, the new-tab button and the minimize / maximize / close
@@ -64,7 +66,7 @@ line, Select all). The rendered Markdown view scrolls vertically the same way.
 
 ## 2. Menus
 
-Three top-level menus: `File`, `Edit`, `View`. Accelerators are shown right-aligned;
+Five top-level menus: `File`, `Edit`, `View`, `Insert`, `Format`. Accelerators are shown right-aligned;
 disabled items are greyed; toggle items carry a check mark.
 
 ### File
@@ -121,19 +123,24 @@ disabled items are greyed; toggle items carry a check mark.
 | └ Restore default zoom | Ctrl+0 |
 | *(separator)* | |
 | Status bar | — (toggle, checked) |
+| Workspace sidebar | — (toggle, checked) |
 | Word wrap | — (toggle, checked) |
 | *(separator)* | |
 | Markdown ▸ | — (greyed for a plain document) |
 
 ---
 
-## 3. Toolbar dropdowns
+## 3. Toolbar dropdowns & Markdown formatting commands
 
 **Paragraph style** (`H1 ▾`): Title · Subtitle · Heading · Subheading · Section ·
 Subsection · Body (the current style is highlighted).
 
 **Lists** (`≡ ▾`): Bulleted list · Numbered list · Increase indent · Decrease
 indent (indent items greyed when they cannot apply).
+
+**Extended Ribbon formatting (`gui2` reference)**:
+- **Inline**: Bold (`**`, `Ctrl+B`), Italic (`*`, `Ctrl+I`), Underline (`<u>...</u>`, `Ctrl+U`), Strikethrough (`~~`, `Ctrl+Shift+X`), Highlight (`==...==`), Inline/Fenced Code (`` ` `` / ```` ``` ````).
+- **Blocks & Insertions**: Task checklist (`- [ ] `), Blockquote (`> `), Horizontal rule (`---`), Hyperlink (`[text](url)`, `Ctrl+K`), Image (`![alt](url)`), Table (`Ctrl+Shift+T`), Clear formatting (`Aa`).
 
 ---
 
@@ -163,7 +170,7 @@ show what a setting changes, and it was taken in one theme on one machine.*
 
 | Control | Behaviour |
 | --- | --- |
-| App theme | The three choices mean what they say: `Light` and `Dark` are obeyed whatever the operating system reports; `Use system setting` follows the system, and where a platform reports nothing the dark palette stays — the look this file was captured in — rather than guessing light. **The light palette has no capture to copy**, so it keeps the dark one's relationships (content surfaces lighter than the chrome, settings cards the same fill as the chrome, borders a step beyond it, text a step off the extreme) with the accent taken from Windows 11's light-mode blue. Nothing about layout differs between themes: same widgets, same positions, different colours. |
+| App theme | The three choices mean what they say: `Light` and `Dark` are obeyed whatever the operating system reports; `Use system setting` follows the system, and where a platform reports nothing the **Light (*Warm Paper & Pine-Slate*)** palette stays — the default look captured in the `gui2` reference (`bg` `#FAF9F6`, `chrome`/`title` `#DCE5E1`, `sidebar_bg` `#EBF0EE`, `gutter_bg` `#F3F1EC`, `gutter_text` `#9BA8A1`, `text` `#1E2623`, `text_dim` `#4F645B`, `border`/`line` `#C7D5CF`, `accent` `#2D6A4F`, `accent_border` `#1E4D38`, `accent_soft` `#D7E3DC`). The **Dark (*Pine-Slate*)** palette uses the dark tokens from `gui2` (`bg` `#1E1F1F`, `title` `#23322D`, `chrome` `#2D3E38`, `sidebar_bg` `#23322D`, `gutter_bg` `#191B1A`, `gutter_text` `#586B64`, `text` `#F1F5F4`, `text_dim` `#879B93`, `border`/`line` `#3B4E47`, `accent` `#3D8B68`, `accent_border` `#2D6A4F`, `accent_soft` `#2F4B41`). Nothing about layout differs between themes: same widgets, same positions, different colours. |
 | Theme and extra windows (§11) | Every window of a run shares one `egui` style, so the palette is installed at the start of each window's own drawing rather than once per application — a second window asking for another palette cannot leave the first one painted in the wrong colours. Whether the choice belongs to the window it was made in or to the whole application the capture does not say; the settings page itself belongs to the window it is open in. A new window starts as the window that opened it looks. |
 | Font | The dropdown lists the four monospaced families this build carries a face for, under the names their authors give them — JetBrains Mono, IBM Plex Mono, Atkinson Hyperlegible Mono, Fira Mono — and the choice is what a document is drawn in, in both surfaces (source and rendered, §1). None of the four is supplied by the operating system: the faces are embedded, so the same names render the same marks on every platform, and each file sits in `crates/platform/assets/fonts` beside the OFL licence text it ships under. All four are monospaced because both document surfaces are monospaced by design (§12). Atkinson Hyperlegible Mono is the choice for a reader who needs letterforms that stay distinguishable (`NC-P007`). A family name this build does not carry — one a newer list wrote — falls back to the default rather than asking the editor to draw in a face that is not there. |
 | Font, and the size half of `NC-P002` | Recorded so the row is not read as more than the screen shows: the capture has a Font dropdown and **no size control**, so the family comes from settings and the size from zoom (§1's percentage, Ctrl+Plus / Ctrl+Minus), which is remembered like the rest. Nothing was invented to fill the gap. |

@@ -180,6 +180,47 @@ fn strikethrough_writes_exactly_two_tildes() {
     assert_eq!(text(&shell), "keep the ~~old value~~");
 }
 
+#[test]
+fn extended_markdown_commands_format_through_the_shell() {
+    let mut shell = selected("press the button", "button");
+    fire(&mut shell, "cmd.md.underline");
+    assert_eq!(text(&shell), "press the <u>button</u>");
+
+    let mut shell = selected("press the button", "button");
+    fire(&mut shell, "cmd.md.highlight");
+    assert_eq!(text(&shell), "press the ==button==");
+
+    let mut shell = selected_all("task one\ntask two");
+    fire(&mut shell, "cmd.md.checklist");
+    assert_eq!(text(&shell), "- [ ] task one\n- [ ] task two");
+
+    let mut shell = selected_all("line one\nline two");
+    fire(&mut shell, "cmd.md.quote");
+    assert_eq!(text(&shell), "> line one\n> line two");
+
+    let mut shell = selected("run cargo test", "cargo test");
+    fire(&mut shell, "cmd.md.code");
+    assert_eq!(text(&shell), "run `cargo test`");
+
+    let mut shell = markdown("first section");
+    fire(&mut shell, "cmd.md.hr");
+    assert_eq!(text(&shell), "first section\n---\n");
+
+    let mut shell = selected("see diagram", "diagram");
+    fire(&mut shell, "cmd.md.image");
+    assert_eq!(text(&shell), "see ![diagram]()");
+
+    let mut shell = selected("colourful word", "word");
+    fire(&mut shell, "cmd.md.text_color");
+    assert_eq!(
+        text(&shell),
+        "colourful <span style=\"color: #C92A2A\">word</span>"
+    );
+    // Firing the same colour again unwraps it.
+    fire(&mut shell, "cmd.md.text_color");
+    assert_eq!(text(&shell), "colourful word");
+}
+
 // ---- NC-M010 — undo/redo: "Single-step undo" ----------------------------------
 
 #[test]
@@ -655,6 +696,11 @@ fn the_formatted_view_changes_nothing_in_the_document() {
         dirty,
         "nor does switching mark the document unsaved"
     );
+
+    fire(&mut shell, "cmd.view.md_split");
+    assert!(shell.split_view(), "the tab is in side-by-side split view");
+    assert!(!shell.formatted_view());
+    assert_eq!(text(&shell), before);
 }
 
 #[test]

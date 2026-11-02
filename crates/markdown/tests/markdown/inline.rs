@@ -108,3 +108,158 @@ fn a_selection_at_the_very_start_and_end_of_the_text_works() {
     assert_eq!(edited.text, "**whole**");
     assert_eq!(edited.selection, Range::new(0, text.len() + 4).unwrap());
 }
+
+#[test]
+fn underline_and_highlight_wrap_and_unwrap_reversibly() {
+    let text = "mark this word";
+    let once_u = toggle_inline(text, selection_of(text, "this"), Inline::Underline).unwrap();
+    assert_eq!(once_u.text, "mark <u>this</u> word");
+    let twice_u = toggle_inline(&once_u.text, once_u.selection, Inline::Underline).unwrap();
+    assert_eq!(twice_u.text, text);
+
+    let once_h = toggle_inline(text, selection_of(text, "this"), Inline::Highlight).unwrap();
+    assert_eq!(once_h.text, "mark ==this== word");
+    let twice_h = toggle_inline(&once_h.text, once_h.selection, Inline::Highlight).unwrap();
+    assert_eq!(twice_h.text, text);
+}
+
+#[test]
+fn checklist_quote_code_hr_and_image_format_as_expected() {
+    use nc_markdown::{
+        insert_horizontal_rule, insert_image, toggle_checklist, toggle_code, toggle_quote,
+    };
+
+    let tasks = "first\nsecond";
+    let checked = toggle_checklist(tasks, Range::new(0, tasks.len()).unwrap()).unwrap();
+    assert_eq!(checked.text, "- [ ] first\n- [ ] second");
+    let unchecked = toggle_checklist(&checked.text, checked.selection).unwrap();
+    assert_eq!(unchecked.text, tasks);
+
+    let quoted = toggle_quote(tasks, Range::new(0, tasks.len()).unwrap()).unwrap();
+    assert_eq!(quoted.text, "> first\n> second");
+    let unquoted = toggle_quote(&quoted.text, quoted.selection).unwrap();
+    assert_eq!(unquoted.text, tasks);
+
+    let inline_code = toggle_code(
+        "run cargo test",
+        selection_of("run cargo test", "cargo test"),
+    )
+    .expect("inline code");
+    assert_eq!(inline_code.text, "run `cargo test`");
+
+    let block_code = toggle_code(
+        "fn main() {\n}",
+        Range::new(0, "fn main() {\n}".len()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(block_code.text, "```\nfn main() {\n}\n```");
+
+    let hr = insert_horizontal_rule("above", Range::caret(5)).unwrap();
+    assert_eq!(hr.text, "above\n---\n");
+
+    let img = insert_image("see diagram", selection_of("see diagram", "diagram"), "").unwrap();
+    assert_eq!(img.text, "see ![diagram]()");
+}
+
+#[test]
+fn set_font_family_wraps_selection_and_updates_existing_span() {
+    use nc_markdown::set_font_family;
+
+    let text = "hello world";
+    let wrapped = set_font_family(text, selection_of(text, "world"), "Fira Mono").unwrap();
+    assert_eq!(
+        wrapped.text,
+        "hello <span style=\"font-family: 'Fira Mono'\">world</span>"
+    );
+
+    // Updating existing font family span
+    let updated = set_font_family(
+        &wrapped.text,
+        selection_of(&wrapped.text, "world"),
+        "IBM Plex Mono",
+    )
+    .unwrap();
+    assert_eq!(
+        updated.text,
+        "hello <span style=\"font-family: 'IBM Plex Mono'\">world</span>"
+    );
+}
+
+#[test]
+fn set_font_size_wraps_selection_and_updates_existing_span() {
+    use nc_markdown::set_font_size;
+
+    let text = "hello world";
+    let wrapped = set_font_size(text, selection_of(text, "world"), 18).unwrap();
+    assert_eq!(
+        wrapped.text,
+        "hello <span style=\"font-size: 18px\">world</span>"
+    );
+
+    // Updating existing font size span
+    let updated = set_font_size(&wrapped.text, selection_of(&wrapped.text, "world"), 20).unwrap();
+    assert_eq!(
+        updated.text,
+        "hello <span style=\"font-size: 20px\">world</span>"
+    );
+}
+
+#[test]
+fn bold_does_not_activate_or_conflict_with_italic() {
+    use nc_markdown::is_inline_active;
+
+    let text = "hello **world** there";
+    let outer_sel = selection_of(text, "**world**");
+    let inner_sel = selection_of(text, "world");
+
+    // Bold is active on bold text, but italic MUST NOT be active
+    assert!(is_inline_active(text, outer_sel, Inline::Bold));
+    assert!(is_inline_active(text, inner_sel, Inline::Bold));
+    assert!(!is_inline_active(text, outer_sel, Inline::Italic));
+    assert!(!is_inline_active(text, inner_sel, Inline::Italic));
+
+    // Italic text has italic active, but NOT bold
+    let italic_text = "hello *world* there";
+    let italic_outer = selection_of(italic_text, "*world*");
+    let italic_inner = selection_of(italic_text, "world");
+    assert!(is_inline_active(italic_text, italic_outer, Inline::Italic));
+    assert!(is_inline_active(italic_text, italic_inner, Inline::Italic));
+    assert!(!is_inline_active(italic_text, italic_outer, Inline::Bold));
+    assert!(!is_inline_active(italic_text, italic_inner, Inline::Bold));
+
+    // Both bold and italic can be applied simultaneously
+    let bold_and_italic = "hello ***world*** there";
+    let both_outer = selection_of(bold_and_italic, "***world***");
+    let both_inner = selection_of(bold_and_italic, "world");
+    assert!(is_inline_active(bold_and_italic, both_outer, Inline::Bold));
+    assert!(is_inline_active(
+        bold_and_italic,
+        both_outer,
+        Inline::Italic
+    ));
+    assert!(is_inline_active(bold_and_italic, both_inner, Inline::Bold));
+    assert!(is_inline_active(
+        bold_and_italic,
+        both_inner,
+        Inline::Italic
+    ));
+
+    // Adding italic to bold text results in bold+italic without stripping bold
+    let added_italic = toggle_inline(text, outer_sel, Inline::Italic).unwrap();
+    assert_eq!(added_italic.text, "hello ***world*** there");
+
+    // Removing italic from bold+italic restores bold
+    let removed_italic =
+        toggle_inline(&added_italic.text, added_italic.selection, Inline::Italic).unwrap();
+    assert_eq!(removed_italic.text, "hello **world** there");
+    assert!(is_inline_active(
+        &removed_italic.text,
+        removed_italic.selection,
+        Inline::Bold
+    ));
+    assert!(!is_inline_active(
+        &removed_italic.text,
+        removed_italic.selection,
+        Inline::Italic
+    ));
+}

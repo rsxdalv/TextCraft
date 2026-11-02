@@ -39,6 +39,28 @@ static ICONS: &[(&str, &[u8])] = &[
         include_bytes!("../../assets/icons/chevron-right.svg"),
     ),
     ("check", include_bytes!("../../assets/icons/check.svg")),
+    (
+        "highlight",
+        include_bytes!("../../assets/icons/highlight.svg"),
+    ),
+    (
+        "checklist",
+        include_bytes!("../../assets/icons/checklist.svg"),
+    ),
+    ("quote", include_bytes!("../../assets/icons/quote.svg")),
+    ("code", include_bytes!("../../assets/icons/code.svg")),
+    ("hr", include_bytes!("../../assets/icons/hr.svg")),
+    ("image", include_bytes!("../../assets/icons/image.svg")),
+    ("sun", include_bytes!("../../assets/icons/sun.svg")),
+    ("moon", include_bytes!("../../assets/icons/moon.svg")),
+    (
+        "text-color",
+        include_bytes!("../../assets/icons/text-color.svg"),
+    ),
+    (
+        "file-text",
+        include_bytes!("../../assets/icons/file-text.svg"),
+    ),
 ];
 
 fn set() -> &'static SvgIconSet {
@@ -97,7 +119,7 @@ pub fn button(ui: &mut Ui, label: &str, name: &str, palette: Palette) -> Respons
         corner_radius: CornerRadius::same(4),
         focus_stroke: Stroke::new(1.0, palette.accent),
     };
-    IconButton::new(label, vec2(30.0, 26.0), &style).show(ui, |ui, rect, tint| {
+    IconButton::new(label, vec2(26.0, 26.0), &style).show(ui, |ui, rect, tint| {
         paint(ui, rect, name, tint);
     })
 }

@@ -8,12 +8,103 @@
 
 use std::path::PathBuf;
 
-use egui::{Align2, Context, Key, RichText, Vec2, WidgetType};
+use egui::{Align2, Color32, Context, CornerRadius, Key, Rect, RichText, Stroke, Vec2, WidgetType};
 
 use crate::ui::a11y;
 use crate::ui::actions;
-use crate::ui::state::{FileDialogMode, Prompt, Shell};
+use crate::ui::i18n;
+use crate::ui::icons;
+use crate::ui::spacing;
+use crate::ui::state::{AppLanguage, FileDialogMode, Prompt, Shell};
+use crate::ui::theme::Palette;
 use nc_textproc::Direction;
+
+/// A styled primary action button (accent fill, white bold text, rounded corners).
+fn primary_button(
+    ui: &mut egui::Ui,
+    label: &str,
+    enabled: bool,
+    palette: Palette,
+) -> egui::Response {
+    let text = RichText::new(label)
+        .color(if enabled {
+            Color32::WHITE
+        } else {
+            palette.text_dim
+        })
+        .strong();
+    let btn = egui::Button::new(text)
+        .fill(if enabled {
+            palette.accent
+        } else {
+            palette.card
+        })
+        .stroke(Stroke::new(
+            1.0,
+            if enabled {
+                palette.accent_border
+            } else {
+                palette.border
+            },
+        ))
+        .corner_radius(CornerRadius::same(6))
+        .min_size(Vec2::new(0.0, 28.0));
+    ui.add_enabled(enabled, btn)
+}
+
+/// A styled secondary button (card fill, 1px border, rounded corners).
+fn secondary_button(ui: &mut egui::Ui, label: &str, palette: Palette) -> egui::Response {
+    let btn = egui::Button::new(RichText::new(label).color(palette.text))
+        .fill(palette.card)
+        .stroke(Stroke::new(1.0, palette.border))
+        .corner_radius(CornerRadius::same(6))
+        .min_size(Vec2::new(0.0, 28.0));
+    ui.add(btn)
+}
+
+/// A styled secondary button with enabled/disabled state.
+fn secondary_button_enabled(
+    ui: &mut egui::Ui,
+    label: &str,
+    enabled: bool,
+    palette: Palette,
+) -> egui::Response {
+    let btn = egui::Button::new(RichText::new(label).color(if enabled {
+        palette.text
+    } else {
+        palette.text_dim
+    }))
+    .fill(palette.card)
+    .stroke(Stroke::new(1.0, palette.border))
+    .corner_radius(CornerRadius::same(6))
+    .min_size(Vec2::new(0.0, 28.0));
+    ui.add_enabled(enabled, btn)
+}
+
+/// A styled destructive/danger button (e.g., "Don't save").
+fn danger_button(ui: &mut egui::Ui, label: &str, palette: Palette) -> egui::Response {
+    let btn = egui::Button::new(RichText::new(label).color(palette.danger))
+        .fill(palette.card)
+        .stroke(Stroke::new(1.0, palette.border))
+        .corner_radius(CornerRadius::same(6))
+        .min_size(Vec2::new(0.0, 28.0));
+    ui.add(btn)
+}
+
+/// Applies common dialog widget visuals (clean 1px border on inputs/controls, card background).
+fn apply_dialog_visuals(ui: &mut egui::Ui, palette: Palette) {
+    let visuals = ui.visuals_mut();
+    visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, palette.border);
+    visuals.widgets.inactive.bg_fill = palette.card;
+    visuals.widgets.inactive.corner_radius = CornerRadius::same(6);
+    visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, palette.accent);
+    visuals.widgets.hovered.corner_radius = CornerRadius::same(6);
+    visuals.widgets.active.bg_stroke = Stroke::new(1.5, palette.accent);
+    visuals.widgets.active.corner_radius = CornerRadius::same(6);
+    visuals.text_edit_bg_color = Some(palette.bg);
+    ui.spacing_mut().item_spacing = Vec2::new(10.0, 8.0);
+    ui.spacing_mut().button_padding = Vec2::new(14.0, 6.0);
+}
 
 /// Draws whichever dialog is open. The file dialog is drawn before the prompt,
 /// so a prompt raised over it sits on top.
@@ -23,6 +114,12 @@ pub fn show(shell: &mut Shell, ctx: &Context) {
     }
     if shell.go_to.open {
         go_to(shell, ctx);
+    }
+    if shell.link_dialog.open {
+        link(shell, ctx);
+    }
+    if shell.image_dialog.open {
+        image(shell, ctx);
     }
     if shell.page_setup_dialog.open {
         page_setup(shell, ctx);
@@ -41,87 +138,137 @@ pub fn show(shell: &mut Shell, ctx: &Context) {
 /// The Find and Replace dialog (`docs/ui-reference.md` §5). Modeless, anchored
 /// to the top-right of the editor surface.
 fn find(shell: &mut Shell, ctx: &Context) {
+    let lang = shell.language;
+    let palette = shell.palette;
     let mut open = shell.find.open;
-    egui::Window::new("Find and Replace")
+    egui::Window::new(i18n::tr(lang, "Find and Replace"))
         .open(&mut open)
         .collapsible(false)
         .resizable(false)
         .anchor(Align2::RIGHT_TOP, Vec2::new(-24.0, 70.0))
         .show(ctx, |ui| {
-            ui.set_min_width(360.0);
+            apply_dialog_visuals(ui, palette);
+            ui.set_min_width(390.0);
 
-            ui.horizontal(|ui| {
-                ui.label("Find what");
-                let response = ui.add(
-                    egui::TextEdit::singleline(&mut shell.find.query)
-                        .id(egui::Id::new("find_query"))
-                        .desired_width(240.0),
-                );
-                a11y::label(&response, WidgetType::TextEdit, "Find what");
-                if shell.find.focus {
-                    response.request_focus();
-                    shell.find.focus = false;
-                }
-                if response.lost_focus()
-                    && ui.input(|input| input.key_pressed(Key::Enter))
-                    && !shell.find.query.is_empty()
-                {
-                    let direction = shell.find.direction;
-                    actions::search_step(shell, direction);
-                }
-            });
-
-            if shell.find.replace {
-                ui.horizontal(|ui| {
-                    ui.label("Replace with");
+            // Aligned 2-column Grid for input fields
+            egui::Grid::new("find_replace_grid")
+                .num_columns(2)
+                .spacing([12.0, 8.0])
+                .show(ui, |ui| {
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.label(RichText::new(i18n::tr(lang, "Find what")).strong());
+                    });
                     let response = ui.add(
-                        egui::TextEdit::singleline(&mut shell.find.replacement)
-                            .desired_width(240.0),
+                        egui::TextEdit::singleline(&mut shell.find.query)
+                            .id(egui::Id::new("find_query"))
+                            .desired_width(250.0)
+                            .margin(spacing::margin(8.0, 4.0)),
                     );
-                    a11y::label(&response, WidgetType::TextEdit, "Replace with");
+                    a11y::label(&response, WidgetType::TextEdit, i18n::tr(lang, "Find what"));
+                    if shell.find.focus {
+                        response.request_focus();
+                        shell.find.focus = false;
+                    }
+                    if response.lost_focus()
+                        && ui.input(|input| input.key_pressed(Key::Enter))
+                        && !shell.find.query.is_empty()
+                    {
+                        let direction = shell.find.direction;
+                        actions::search_step(shell, direction);
+                    }
+                    ui.end_row();
+
+                    if shell.find.replace {
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            ui.label(RichText::new(i18n::tr(lang, "Replace with")).strong());
+                        });
+                        let repl_resp = ui.add(
+                            egui::TextEdit::singleline(&mut shell.find.replacement)
+                                .desired_width(250.0)
+                                .margin(spacing::margin(8.0, 4.0)),
+                        );
+                        a11y::label(
+                            &repl_resp,
+                            WidgetType::TextEdit,
+                            i18n::tr(lang, "Replace with"),
+                        );
+                        ui.end_row();
+                    }
                 });
-            }
 
-            ui.horizontal(|ui| {
-                ui.checkbox(&mut shell.find.options.match_case, "Match case");
-                ui.checkbox(&mut shell.find.options.whole_word, "Match whole word only");
-            });
+            ui.add_space(2.0);
 
-            ui.horizontal(|ui| {
-                ui.label("Direction");
-                ui.radio_value(&mut shell.find.direction, Direction::Forward, "Down");
-                ui.radio_value(&mut shell.find.direction, Direction::Backward, "Up");
-            });
+            // Search Options Card Container
+            egui::Frame::NONE
+                .fill(palette.card)
+                .stroke(Stroke::new(1.0, palette.border))
+                .corner_radius(CornerRadius::same(6))
+                .inner_margin(spacing::margin(12.0, 8.0))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.checkbox(
+                            &mut shell.find.options.match_case,
+                            i18n::tr(lang, "Match case"),
+                        );
+                        ui.add_space(8.0);
+                        ui.checkbox(
+                            &mut shell.find.options.whole_word,
+                            i18n::tr(lang, "Match whole word only"),
+                        );
+                    });
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(format!("{}:", i18n::tr(lang, "Direction")))
+                                .color(palette.text_dim),
+                        );
+                        ui.radio_value(
+                            &mut shell.find.direction,
+                            Direction::Forward,
+                            i18n::tr(lang, "Down"),
+                        );
+                        ui.radio_value(
+                            &mut shell.find.direction,
+                            Direction::Backward,
+                            i18n::tr(lang, "Up"),
+                        );
+                        ui.add_space(16.0);
+                        ui.checkbox(&mut shell.find.wraps, i18n::tr(lang, "Wrap around"));
+                    });
+                });
 
-            ui.checkbox(&mut shell.find.wraps, "Wrap around");
+            ui.add_space(4.0);
             ui.separator();
+            ui.add_space(2.0);
 
             let has_query = !shell.find.query.is_empty();
             ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(has_query, egui::Button::new("Find Next"))
-                    .clicked()
-                {
+                if primary_button(ui, i18n::tr(lang, "Find Next"), has_query, palette).clicked() {
                     let direction = shell.find.direction;
                     actions::search_step(shell, direction);
                 }
                 if shell.find.replace {
-                    if ui
-                        .add_enabled(has_query, egui::Button::new("Replace"))
+                    if secondary_button_enabled(ui, i18n::tr(lang, "Replace"), has_query, palette)
                         .clicked()
                     {
                         actions::replace(shell);
                     }
-                    if ui
-                        .add_enabled(has_query, egui::Button::new("Replace All"))
-                        .clicked()
+                    if secondary_button_enabled(
+                        ui,
+                        i18n::tr(lang, "Replace All"),
+                        has_query,
+                        palette,
+                    )
+                    .clicked()
                     {
                         actions::replace_all(shell);
                     }
                 }
-                if ui.button("Close").clicked() {
-                    shell.find.open = false;
-                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if secondary_button(ui, i18n::tr(lang, "Close"), palette).clicked() {
+                        shell.find.open = false;
+                    }
+                });
             });
         });
 
@@ -132,22 +279,30 @@ fn find(shell: &mut Shell, ctx: &Context) {
 
 /// The Go to line dialog (`docs/ui-reference.md` §6). A small modal card.
 fn go_to(shell: &mut Shell, ctx: &Context) {
+    let lang = shell.language;
+    let palette = shell.palette;
     let mut open = shell.go_to.open;
-    egui::Window::new("Go to line")
+    egui::Window::new(i18n::tr(lang, "Go to line"))
         .open(&mut open)
         .collapsible(false)
         .resizable(false)
         .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
         .show(ctx, |ui| {
-            ui.set_min_width(240.0);
+            apply_dialog_visuals(ui, palette);
+            ui.set_min_width(280.0);
             ui.horizontal(|ui| {
-                ui.label("Line number");
+                ui.label(RichText::new(i18n::tr(lang, "Line number")).strong());
                 let response = ui.add(
                     egui::TextEdit::singleline(&mut shell.go_to.line)
                         .id(egui::Id::new("go_to_line"))
-                        .desired_width(90.0),
+                        .desired_width(110.0)
+                        .margin(spacing::margin(8.0, 4.0)),
                 );
-                a11y::label(&response, WidgetType::TextEdit, "Line number");
+                a11y::label(
+                    &response,
+                    WidgetType::TextEdit,
+                    i18n::tr(lang, "Line number"),
+                );
                 if shell.go_to.focus {
                     response.request_focus();
                     shell.go_to.focus = false;
@@ -155,16 +310,21 @@ fn go_to(shell: &mut Shell, ctx: &Context) {
             });
 
             let valid = nc_textproc::parse_line_number(&shell.go_to.line).is_some();
+            ui.add_space(2.0);
             ui.separator();
+            ui.add_space(2.0);
+
             ui.horizontal(|ui| {
-                if ui.add_enabled(valid, egui::Button::new("Go to")).clicked()
-                    || (valid && ui.input(|input| input.key_pressed(Key::Enter)))
-                {
-                    actions::go_to(shell);
-                }
-                if ui.button("Cancel").clicked() {
-                    shell.go_to.open = false;
-                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if primary_button(ui, i18n::tr(lang, "Go to"), valid, palette).clicked()
+                        || (valid && ui.input(|input| input.key_pressed(Key::Enter)))
+                    {
+                        actions::go_to(shell);
+                    }
+                    if secondary_button(ui, i18n::tr(lang, "Cancel"), palette).clicked() {
+                        shell.go_to.open = false;
+                    }
+                });
             });
         });
 
@@ -177,8 +337,9 @@ fn go_to(shell: &mut Shell, ctx: &Context) {
 /// will mark. It edits a draft, so `Cancel` throws the changes away and `Print` commits
 /// them and prints with them — exactly the two buttons §8 names.
 fn page_setup(shell: &mut Shell, ctx: &Context) {
+    let lang = shell.language;
     let mut open = shell.page_setup_dialog.open;
-    egui::Window::new("Page setup")
+    egui::Window::new(i18n::tr(lang, "Page setup"))
         .open(&mut open)
         .collapsible(false)
         .resizable(false)
@@ -188,7 +349,7 @@ fn page_setup(shell: &mut Shell, ctx: &Context) {
             let draft = &mut shell.page_setup_dialog.draft;
 
             ui.horizontal(|ui| {
-                ui.label("Paper size");
+                ui.label(i18n::tr(lang, "Paper size"));
                 egui::ComboBox::from_id_salt("page_paper")
                     .selected_text(draft.paper.label())
                     .show_ui(ui, |ui| {
@@ -199,53 +360,83 @@ fn page_setup(shell: &mut Shell, ctx: &Context) {
             });
 
             ui.horizontal(|ui| {
-                ui.label("Orientation");
+                ui.label(i18n::tr(lang, "Orientation"));
                 ui.radio_value(
                     &mut draft.orientation,
                     nc_textproc::Orientation::Portrait,
-                    "Portrait",
+                    i18n::tr(lang, "Portrait"),
                 );
                 ui.radio_value(
                     &mut draft.orientation,
                     nc_textproc::Orientation::Landscape,
-                    "Landscape",
+                    i18n::tr(lang, "Landscape"),
                 );
             });
 
-            ui.label("Margins (mm)");
+            ui.label(i18n::tr(lang, "Margins (mm)"));
             let margins = &mut draft.margins;
             ui.horizontal(|ui| {
-                margin_field(ui, "margin_left", "Left", &mut margins.left);
-                margin_field(ui, "margin_right", "Right", &mut margins.right);
+                margin_field(ui, "margin_left", i18n::tr(lang, "Left"), &mut margins.left);
+                margin_field(
+                    ui,
+                    "margin_right",
+                    i18n::tr(lang, "Right"),
+                    &mut margins.right,
+                );
             });
             ui.horizontal(|ui| {
-                margin_field(ui, "margin_top", "Top", &mut margins.top);
-                margin_field(ui, "margin_bottom", "Bottom", &mut margins.bottom);
+                margin_field(ui, "margin_top", i18n::tr(lang, "Top"), &mut margins.top);
+                margin_field(
+                    ui,
+                    "margin_bottom",
+                    i18n::tr(lang, "Bottom"),
+                    &mut margins.bottom,
+                );
             });
+
+            let header_hint = match lang {
+                AppLanguage::Portuguese => "Cabeçalho — &p número da página, &d data",
+                AppLanguage::Spanish => "Encabezado — &p número de página, &d fecha",
+                AppLanguage::French => "En-tête — &p numéro de page, &d date",
+                AppLanguage::German => "Kopfzeile — &p Seitenzahl, &d Datum",
+                AppLanguage::Italian => "Intestazione — &p numero di pagina, &d data",
+                AppLanguage::English => "Header — &p page number, &d date",
+            };
+            let footer_hint = match lang {
+                AppLanguage::Portuguese => "Rodapé — &p número da página, &d data",
+                AppLanguage::Spanish => "Pie de página — &p número de página, &d fecha",
+                AppLanguage::French => "Pied de page — &p numéro de page, &d date",
+                AppLanguage::German => "Fußzeile — &p Seitenzahl, &d Datum",
+                AppLanguage::Italian => "Piè di pagina — &p numero di pagina, &d data",
+                AppLanguage::English => "Footer — &p page number, &d date",
+            };
 
             let response = ui.add(
                 egui::TextEdit::singleline(&mut draft.header)
                     .id(egui::Id::new("page_header"))
-                    .hint_text("Header — &p page number, &d date"),
+                    .hint_text(header_hint),
             );
-            a11y::label(&response, WidgetType::TextEdit, "Header");
+            a11y::label(&response, WidgetType::TextEdit, i18n::tr(lang, "Header"));
             let response = ui.add(
                 egui::TextEdit::singleline(&mut draft.footer)
                     .id(egui::Id::new("page_footer"))
-                    .hint_text("Footer — &p page number, &d date"),
+                    .hint_text(footer_hint),
             );
-            a11y::label(&response, WidgetType::TextEdit, "Footer");
+            a11y::label(&response, WidgetType::TextEdit, i18n::tr(lang, "Footer"));
 
+            let palette = shell.palette;
             ui.separator();
             ui.horizontal(|ui| {
-                if ui.button("Print").clicked() {
-                    shell.page_setup = shell.page_setup_dialog.draft.clone();
-                    shell.page_setup_dialog.open = false;
-                    actions::print(shell);
-                }
-                if ui.button("Cancel").clicked() {
-                    shell.page_setup_dialog.open = false;
-                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if primary_button(ui, i18n::tr(lang, "Print"), true, palette).clicked() {
+                        shell.page_setup = shell.page_setup_dialog.draft.clone();
+                        shell.page_setup_dialog.open = false;
+                        actions::print(shell);
+                    }
+                    if secondary_button(ui, i18n::tr(lang, "Cancel"), palette).clicked() {
+                        shell.page_setup_dialog.open = false;
+                    }
+                });
             });
         });
 
@@ -271,21 +462,31 @@ fn spelling(shell: &mut Shell, ctx: &Context) {
         actions::close_spelling(shell);
         return;
     }
+    let lang = shell.language;
     let mut open = shell.spelling.open;
     let word = shell.spelling.word.clone();
     let suggestions = shell.spelling.suggestions.clone();
     let mut chosen: Option<usize> = None;
 
-    egui::Window::new("Spelling")
+    let misspelled_msg = match lang {
+        AppLanguage::Portuguese => format!("\"{word}\" está com erro ortográfico."),
+        AppLanguage::Spanish => format!("\"{word}\" está mal escrita."),
+        AppLanguage::French => format!("« {word} » est mal orthographié."),
+        AppLanguage::German => format!("„{word}“ ist falsch geschrieben."),
+        AppLanguage::Italian => format!("\"{word}\" non è corretta."),
+        AppLanguage::English => format!("\"{word}\" is misspelled."),
+    };
+
+    egui::Window::new(i18n::tr(lang, "Spelling"))
         .open(&mut open)
         .collapsible(false)
         .resizable(false)
         .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
         .show(ctx, |ui| {
             ui.set_min_width(240.0);
-            ui.label(RichText::new(format!("\"{word}\" is misspelled.")));
+            ui.label(RichText::new(misspelled_msg));
             ui.separator();
-            ui.label("Suggestions");
+            ui.label(i18n::tr(lang, "Suggestions"));
             egui::ScrollArea::vertical()
                 .max_height(160.0)
                 .auto_shrink([false, false])
@@ -297,7 +498,7 @@ fn spelling(shell: &mut Shell, ctx: &Context) {
                     }
                 });
             ui.separator();
-            if ui.button("Dismiss").clicked() {
+            if ui.button(i18n::tr(lang, "Dismiss")).clicked() {
                 actions::close_spelling(shell);
             }
         });
@@ -319,32 +520,42 @@ fn native_file_dialog(shell: &mut Shell) {
         return;
     };
     let picker = rfd::FileDialog::new().set_directory(&dialog.directory);
-    let picked = match dialog.mode {
-        FileDialogMode::Open => picker
-            .set_title("Open")
-            .add_filter("Text documents", &["txt", "md", "markdown", "log"])
-            .add_filter("All files", &["*"])
-            .pick_file(),
-        FileDialogMode::SaveAs => picker
-            .set_title("Save as")
-            .set_file_name(dialog.file_name.as_str())
-            .add_filter("Text documents", &["txt"])
-            .add_filter("Markdown", &["md"])
-            .add_filter("All files", &["*"])
-            .save_file(),
-    };
-    match picked {
-        Some(path) => {
-            if let Some(parent) = path.parent() {
-                dialog.directory = parent.to_path_buf();
+    match dialog.mode {
+        FileDialogMode::Open => {
+            let picked = picker
+                .set_title("Open")
+                .add_filter("Text documents", &["txt", "md", "markdown", "log"])
+                .add_filter("All files", &["*"])
+                .pick_files();
+            shell.file_dialog = None;
+            if let Some(paths) = picked {
+                for path in paths {
+                    actions::open_path(shell, &path, None);
+                }
             }
-            dialog.file_name = path
-                .file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            actions::confirm_file_dialog(shell);
         }
-        None => shell.file_dialog = None,
+        FileDialogMode::SaveAs => {
+            let picked = picker
+                .set_title("Save as")
+                .set_file_name(dialog.file_name.as_str())
+                .add_filter("Text documents", &["txt"])
+                .add_filter("Markdown", &["md"])
+                .add_filter("All files", &["*"])
+                .save_file();
+            match picked {
+                Some(path) => {
+                    if let Some(parent) = path.parent() {
+                        dialog.directory = parent.to_path_buf();
+                    }
+                    dialog.file_name = path
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    actions::confirm_file_dialog(shell);
+                }
+                None => shell.file_dialog = None,
+            }
+        }
     }
 }
 
@@ -355,6 +566,7 @@ fn file_dialog(shell: &mut Shell, ctx: &Context) {
         native_file_dialog(shell);
         return;
     }
+    let lang = shell.language;
     let Some(dialog) = shell.file_dialog.as_mut() else {
         return;
     };
@@ -364,12 +576,12 @@ fn file_dialog(shell: &mut Shell, ctx: &Context) {
     let palette = shell.palette;
 
     let title = match dialog.mode {
-        FileDialogMode::Open => "Open",
-        FileDialogMode::SaveAs => "Save as",
+        FileDialogMode::Open => i18n::tr(lang, "Open"),
+        FileDialogMode::SaveAs => i18n::tr(lang, "Save as"),
     };
     let primary = match dialog.mode {
-        FileDialogMode::Open => "Open",
-        FileDialogMode::SaveAs => "Save",
+        FileDialogMode::Open => i18n::tr(lang, "Open"),
+        FileDialogMode::SaveAs => i18n::tr(lang, "Save"),
     };
 
     let mut window_open = true;
@@ -386,7 +598,7 @@ fn file_dialog(shell: &mut Shell, ctx: &Context) {
 
             ui.horizontal(|ui| {
                 let up = ui.button("‹");
-                a11y::label(&up, WidgetType::Button, "Up one level");
+                a11y::label(&up, WidgetType::Button, i18n::tr(lang, "Up one level"));
                 if up.clicked() {
                     dialog.go_up();
                 }
@@ -430,13 +642,13 @@ fn file_dialog(shell: &mut Shell, ctx: &Context) {
                 });
 
             ui.horizontal(|ui| {
-                ui.label("File name");
+                ui.label(i18n::tr(lang, "File name"));
                 let response = ui.add(
                     egui::TextEdit::singleline(&mut dialog.file_name)
                         .id(egui::Id::new("file_name"))
                         .desired_width(300.0),
                 );
-                a11y::label(&response, WidgetType::TextEdit, "File name");
+                a11y::label(&response, WidgetType::TextEdit, i18n::tr(lang, "File name"));
                 if dialog.focus {
                     response.request_focus();
                     dialog.focus = false;
@@ -447,7 +659,7 @@ fn file_dialog(shell: &mut Shell, ctx: &Context) {
             });
 
             ui.horizontal(|ui| {
-                ui.label("Encoding");
+                ui.label(i18n::tr(lang, "Encoding"));
                 let combo = egui::ComboBox::from_id_salt("file_encoding")
                     .selected_text(dialog.encoding.label())
                     .show_ui(ui, |ui| {
@@ -455,7 +667,11 @@ fn file_dialog(shell: &mut Shell, ctx: &Context) {
                             ui.selectable_value(&mut dialog.encoding, *choice, choice.label());
                         }
                     });
-                a11y::label(&combo.response, WidgetType::ComboBox, "Encoding");
+                a11y::label(
+                    &combo.response,
+                    WidgetType::ComboBox,
+                    i18n::tr(lang, "Encoding"),
+                );
             });
 
             if let Some(error) = &dialog.error {
@@ -465,12 +681,14 @@ fn file_dialog(shell: &mut Shell, ctx: &Context) {
             ui.separator();
             ui.horizontal(|ui| {
                 let ready = !dialog.file_name.trim().is_empty();
-                if ui.add_enabled(ready, egui::Button::new(primary)).clicked() {
-                    confirm = true;
-                }
-                if ui.button("Cancel").clicked() {
-                    cancel = true;
-                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if primary_button(ui, primary, ready, palette).clicked() {
+                        confirm = true;
+                    }
+                    if secondary_button(ui, i18n::tr(lang, "Cancel"), palette).clicked() {
+                        cancel = true;
+                    }
+                });
             });
         });
 
@@ -519,7 +737,8 @@ fn prompt(shell: &mut Shell, ctx: &Context) {
     let Some(prompt) = shell.prompt.clone() else {
         return;
     };
-
+    let lang = shell.language;
+    let palette = shell.palette;
     let (title, body) = prompt_title_and_body(shell, &prompt);
     let buttons = prompt_buttons(&prompt);
 
@@ -532,13 +751,157 @@ fn prompt(shell: &mut Shell, ctx: &Context) {
         .resizable(false)
         .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
         .show(ctx, |ui| {
-            ui.set_min_width(380.0);
-            ui.label(body);
-            ui.separator();
+            apply_dialog_visuals(ui, palette);
+            ui.set_min_width(420.0);
+
+            // Icon + Message layout
             ui.horizontal(|ui| {
-                for button in buttons {
-                    if ui.button(button.label).clicked() {
-                        answer = Some(button.answer);
+                let badge_size = 40.0;
+                let (badge_rect, _) =
+                    ui.allocate_exact_size(Vec2::splat(badge_size), egui::Sense::hover());
+                let (badge_bg, icon_name, icon_tint) = match &prompt {
+                    Prompt::UnsavedChanges { .. } => (
+                        palette.accent_soft,
+                        "file-text",
+                        palette.accent,
+                    ),
+                    Prompt::Overwrite { .. } => (
+                        Color32::from_rgba_premultiplied(0xff, 0x8a, 0x80, 50),
+                        "close",
+                        palette.danger,
+                    ),
+                    Prompt::Unrepresentable { .. } => (
+                        Color32::from_rgba_premultiplied(0xff, 0x8a, 0x80, 50),
+                        "close",
+                        palette.danger,
+                    ),
+                    Prompt::OutsideChange { .. } => (
+                        palette.accent_soft,
+                        "file-text",
+                        palette.accent,
+                    ),
+                };
+                ui.painter().rect_filled(
+                    badge_rect,
+                    CornerRadius::same(20),
+                    badge_bg,
+                );
+                ui.painter().rect_stroke(
+                    badge_rect,
+                    CornerRadius::same(20),
+                    Stroke::new(1.0, palette.border),
+                    egui::StrokeKind::Inside,
+                );
+                let icon_img = icons::glyph(icon_name, icon_tint);
+                let icon_rect = Rect::from_center_size(badge_rect.center(), Vec2::splat(20.0));
+                icon_img.paint_at(ui, icon_rect);
+
+                ui.vertical(|ui| {
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(&body)
+                                .strong()
+                                .size(13.5)
+                                .color(palette.text),
+                        )
+                        .wrap(),
+                    );
+                    let subtitle = match &prompt {
+                        Prompt::UnsavedChanges { .. } => match lang {
+                            AppLanguage::Portuguese => {
+                                "Se você fechar sem salvar, as alterações recentes serão perdidas."
+                            }
+                            AppLanguage::Spanish => {
+                                "Si cierra sin guardar, se perderán los cambios recientes."
+                            }
+                            AppLanguage::French => {
+                                "Si vous fermez sans enregistrer, les modifications récentes seront perdues."
+                            }
+                            AppLanguage::German => {
+                                "Wenn Sie ohne Speichern schließen, gehen die letzten Änderungen verloren."
+                            }
+                            AppLanguage::Italian => {
+                                "Se chiudi senza salvare, le modifiche recenti andranno perse."
+                            }
+                            AppLanguage::English => {
+                                "If you close without saving, your recent changes will be lost."
+                            }
+                        },
+                        Prompt::Overwrite { .. } => match lang {
+                            AppLanguage::Portuguese => {
+                                "O arquivo existente será substituído pelo conteúdo atual."
+                            }
+                            AppLanguage::Spanish => {
+                                "El archivo existente será reemplazado con el contenido actual."
+                            }
+                            AppLanguage::French => {
+                                "Le fichier existant sera remplacé par le contenu actuel."
+                            }
+                            AppLanguage::German => {
+                                "Die vorhandene Datei wird durch den aktuellen Inhalt ersetzt."
+                            }
+                            AppLanguage::Italian => {
+                                "Il file esistente verrà sostituito con il conteúdo atual."
+                            }
+                            AppLanguage::English => {
+                                "The existing file will be replaced with the current content."
+                            }
+                        },
+                        _ => "",
+                    };
+                    if !subtitle.is_empty() {
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(subtitle)
+                                    .size(12.0)
+                                    .color(palette.text_dim),
+                            )
+                            .wrap(),
+                        );
+                    }
+                });
+            });
+
+            ui.add_space(4.0);
+            ui.separator();
+            ui.add_space(2.0);
+
+            ui.horizontal(|ui| {
+                match &prompt {
+                    Prompt::UnsavedChanges { .. } => {
+                        if danger_button(ui, i18n::tr(lang, "Don't save"), palette).clicked() {
+                            answer = Some(Answer::DontSave);
+                        }
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if primary_button(ui, i18n::tr(lang, "Save"), true, palette).clicked()
+                                || ui.input(|i| i.key_pressed(Key::Enter))
+                            {
+                                answer = Some(Answer::Save);
+                            }
+                            if secondary_button(ui, i18n::tr(lang, "Cancel"), palette).clicked() {
+                                answer = Some(Answer::Cancel);
+                            }
+                        });
+                    }
+                    _ => {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            for button in buttons.iter().rev() {
+                                let is_primary = matches!(
+                                    button.answer,
+                                    Answer::Replace | Answer::SaveAnyway | Answer::Reload
+                                );
+                                let clicked = if is_primary {
+                                    primary_button(ui, i18n::tr(lang, button.label), true, palette).clicked()
+                                        || ui.input(|i| i.key_pressed(Key::Enter))
+                                } else {
+                                    secondary_button(ui, i18n::tr(lang, button.label), palette).clicked()
+                                };
+                                if clicked {
+                                    answer = Some(button.answer);
+                                }
+                            }
+                        });
                     }
                 }
             });
@@ -563,20 +926,48 @@ fn prompt(shell: &mut Shell, ctx: &Context) {
 
 /// A prompt's title and the sentence it asks.
 fn prompt_title_and_body(shell: &Shell, prompt: &Prompt) -> (&'static str, String) {
+    let lang = shell.language;
     match prompt {
         Prompt::UnsavedChanges { tab } => {
             let name = shell
                 .tabs
                 .get(*tab)
                 .map(|tab| tab.title())
-                .unwrap_or_else(|| "Untitled".to_owned());
-            ("Unsaved changes", format!("Save changes to \"{name}\"?"))
+                .unwrap_or_else(|| i18n::tr(lang, "Untitled").to_owned());
+            (
+                i18n::tr(lang, "Unsaved changes"),
+                match lang {
+                    AppLanguage::Portuguese => format!("Salvar alterações em \"{name}\"?"),
+                    AppLanguage::Spanish => format!("¿Guardar cambios en \"{name}\"?"),
+                    AppLanguage::French => {
+                        format!("Enregistrer les modifications apportées à « {name} » ?")
+                    }
+                    AppLanguage::German => format!("Änderungen an „{name}“ speichern?"),
+                    AppLanguage::Italian => format!("Salvare le modifiche a \"{name}\"?"),
+                    AppLanguage::English => format!("Save changes to \"{name}\"?"),
+                },
+            )
         }
         Prompt::Overwrite { path, .. } => {
             let name = file_name(path);
             (
-                "Confirm save as",
-                format!("\"{name}\" already exists. Do you want to replace it?"),
+                i18n::tr(lang, "Confirm save as"),
+                match lang {
+                    AppLanguage::Portuguese => {
+                        format!("\"{name}\" já existe. Deseja substituí-lo?")
+                    }
+                    AppLanguage::Spanish => format!("\"{name}\" ya existe. ¿Desea reemplazarlo?"),
+                    AppLanguage::French => {
+                        format!("« {name} » existe déjà. Voulez-vous le remplacer ?")
+                    }
+                    AppLanguage::German => {
+                        format!("„{name}“ ist bereits vorhanden. Möchten Sie die Datei ersetzen?")
+                    }
+                    AppLanguage::Italian => format!("\"{name}\" esiste già. Sostituirlo?"),
+                    AppLanguage::English => {
+                        format!("\"{name}\" already exists. Do you want to replace it?")
+                    }
+                },
             )
         }
         Prompt::Unrepresentable {
@@ -584,17 +975,58 @@ fn prompt_title_and_body(shell: &Shell, prompt: &Prompt) -> (&'static str, Strin
             characters,
             ..
         } => (
-            "Characters cannot be saved",
-            format!(
-                "{} characters cannot be saved in {encoding}. Saving will replace them with \"?\". Save anyway?",
-                characters.len()
-            ),
+            i18n::tr(lang, "Characters cannot be saved"),
+            match lang {
+                AppLanguage::Portuguese => format!(
+                    "{} caracteres não podem ser salvos em {encoding}. Salvar irá substituí-los por \"?\". Salvar mesmo assim?",
+                    characters.len()
+                ),
+                AppLanguage::Spanish => format!(
+                    "{} caracteres no se pueden guardar en {encoding}. Al guardar se reemplazarán con \"?\". ¿Guardar de todos modos?",
+                    characters.len()
+                ),
+                AppLanguage::French => format!(
+                    "{} caractères ne peuvent pas être enregistrés dans {encoding}. L'enregistrement les remplacera par « ? ». Enregistrer quand même ?",
+                    characters.len()
+                ),
+                AppLanguage::German => format!(
+                    "{} Zeichen können nicht in {encoding} gespeichert werden. Beim Speichern werden sie durch „?“ ersetzt. Trotzdem speichern?",
+                    characters.len()
+                ),
+                AppLanguage::Italian => format!(
+                    "{} caratteri non possono essere salvati in {encoding}. Il salvataggio li sostituirà con \"?\". Salvare comunque?",
+                    characters.len()
+                ),
+                AppLanguage::English => format!(
+                    "{} characters cannot be saved in {encoding}. Saving will replace them with \"?\". Save anyway?",
+                    characters.len()
+                ),
+            },
         ),
         Prompt::OutsideChange { path, .. } => {
             let name = file_name(path);
             (
-                "File changed on disk",
-                format!("\"{name}\" has changed on disk since it was last read."),
+                i18n::tr(lang, "File changed on disk"),
+                match lang {
+                    AppLanguage::Portuguese => {
+                        format!("\"{name}\" foi alterado no disco desde a última leitura.")
+                    }
+                    AppLanguage::Spanish => {
+                        format!("\"{name}\" ha cambiado en el disco desde la última lectura.")
+                    }
+                    AppLanguage::French => format!(
+                        "« {name} » a été modifié sur le disque depuis sa dernière lecture."
+                    ),
+                    AppLanguage::German => format!(
+                        "„{name}“ wurde seit dem letzten Lesen auf dem Datenträger geändert."
+                    ),
+                    AppLanguage::Italian => {
+                        format!("\"{name}\" è stato modificato sul disco dall'ultima leitura.")
+                    }
+                    AppLanguage::English => {
+                        format!("\"{name}\" has changed on disk since it was last read.")
+                    }
+                },
             )
         }
     }
@@ -668,4 +1100,188 @@ fn file_name(path: &std::path::Path) -> String {
     path.file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.display().to_string())
+}
+
+/// The Insert Link dialog.
+fn link(shell: &mut Shell, ctx: &Context) {
+    let lang = shell.language;
+    let palette = shell.palette;
+    let mut open = shell.link_dialog.open;
+    let mut insert = false;
+    let mut cancel = false;
+    egui::Window::new(i18n::tr(lang, "Insert Link"))
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+        .show(ctx, |ui| {
+            apply_dialog_visuals(ui, palette);
+            ui.set_min_width(340.0);
+            egui::Grid::new("link_dialog_grid")
+                .num_columns(2)
+                .spacing([12.0, 10.0])
+                .show(ui, |ui| {
+                    ui.label(i18n::tr(lang, "Text to display:"));
+                    let text_resp = ui.add(
+                        egui::TextEdit::singleline(&mut shell.link_dialog.text)
+                            .id(egui::Id::new("link_dialog_text"))
+                            .desired_width(220.0),
+                    );
+                    a11y::label(
+                        &text_resp,
+                        WidgetType::TextEdit,
+                        i18n::tr(lang, "Text to display"),
+                    );
+
+                    ui.end_row();
+
+                    ui.label(i18n::tr(lang, "Link URL:"));
+                    let url_resp = ui.add(
+                        egui::TextEdit::singleline(&mut shell.link_dialog.url)
+                            .id(egui::Id::new("link_dialog_url"))
+                            .desired_width(220.0),
+                    );
+                    a11y::label(&url_resp, WidgetType::TextEdit, i18n::tr(lang, "Link URL"));
+                    if shell.link_dialog.focus {
+                        if shell.link_dialog.text.is_empty() {
+                            text_resp.request_focus();
+                        } else {
+                            url_resp.request_focus();
+                        }
+                        shell.link_dialog.focus = false;
+                    }
+                    if url_resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                        insert = true;
+                    }
+                    ui.end_row();
+                });
+
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(4.0);
+
+            let palette = shell.palette;
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if primary_button(ui, i18n::tr(lang, "Insert"), true, palette).clicked() {
+                        insert = true;
+                    }
+                    if secondary_button(ui, i18n::tr(lang, "Cancel"), palette).clicked() {
+                        cancel = true;
+                    }
+                });
+            });
+        });
+
+    if !open || cancel || ctx.input(|i| i.key_pressed(Key::Escape)) {
+        shell.link_dialog.open = false;
+    }
+
+    if insert {
+        let label = shell.link_dialog.text.clone();
+        let url = shell.link_dialog.url.trim().to_string();
+        shell.link_dialog.open = false;
+        actions::apply_custom_link(shell, &label, &url);
+    }
+}
+
+/// The Insert Image dialog.
+fn image(shell: &mut Shell, ctx: &Context) {
+    let lang = shell.language;
+    let palette = shell.palette;
+    let mut open = shell.image_dialog.open;
+    let mut insert = false;
+    let mut cancel = false;
+    let mut browse = false;
+    egui::Window::new(i18n::tr(lang, "Insert Image"))
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+        .show(ctx, |ui| {
+            apply_dialog_visuals(ui, palette);
+            ui.set_min_width(380.0);
+            egui::Grid::new("image_dialog_grid")
+                .num_columns(2)
+                .spacing([12.0, 10.0])
+                .show(ui, |ui| {
+                    ui.label(i18n::tr(lang, "Alt text:"));
+                    let alt_resp = ui.add(
+                        egui::TextEdit::singleline(&mut shell.image_dialog.alt)
+                            .id(egui::Id::new("image_dialog_alt"))
+                            .desired_width(240.0),
+                    );
+                    a11y::label(&alt_resp, WidgetType::TextEdit, i18n::tr(lang, "Alt text"));
+
+                    ui.end_row();
+
+                    ui.label(i18n::tr(lang, "Path or URL:"));
+                    ui.horizontal(|ui| {
+                        let path_resp = ui.add(
+                            egui::TextEdit::singleline(&mut shell.image_dialog.path_or_url)
+                                .id(egui::Id::new("image_dialog_path"))
+                                .desired_width(170.0),
+                        );
+                        a11y::label(
+                            &path_resp,
+                            WidgetType::TextEdit,
+                            i18n::tr(lang, "Path or URL"),
+                        );
+                        if shell.image_dialog.focus {
+                            if shell.image_dialog.alt.is_empty() {
+                                alt_resp.request_focus();
+                            } else {
+                                path_resp.request_focus();
+                            }
+                            shell.image_dialog.focus = false;
+                        }
+                        if path_resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                            insert = true;
+                        }
+                        if secondary_button(ui, i18n::tr(lang, "Browse..."), palette).clicked() {
+                            browse = true;
+                        }
+                    });
+                    ui.end_row();
+                });
+
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(4.0);
+
+            let palette = shell.palette;
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if primary_button(ui, i18n::tr(lang, "Insert"), true, palette).clicked() {
+                        insert = true;
+                    }
+                    if secondary_button(ui, i18n::tr(lang, "Cancel"), palette).clicked() {
+                        cancel = true;
+                    }
+                });
+            });
+        });
+
+    if browse {
+        if let Some(path) = rfd::FileDialog::new()
+            .add_filter(
+                "Images",
+                &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"],
+            )
+            .pick_file()
+        {
+            shell.image_dialog.path_or_url = path.to_string_lossy().into_owned();
+        }
+    }
+
+    if !open || cancel || ctx.input(|i| i.key_pressed(Key::Escape)) {
+        shell.image_dialog.open = false;
+    }
+
+    if insert {
+        let alt = shell.image_dialog.alt.clone();
+        let path_or_url = shell.image_dialog.path_or_url.trim().to_string();
+        shell.image_dialog.open = false;
+        actions::apply_custom_image(shell, &alt, &path_or_url);
+    }
 }

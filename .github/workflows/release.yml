@@ -3,7 +3,7 @@ name: Release
 # Builds the distributable packages and attaches them to a GitHub release.
 #
 #   Windows x64   .msi installer and a portable .zip
-#   Linux x86_64  .tar.gz (binary, launcher, icon)
+#   Linux x86_64  .tar.gz (binary, launcher, icon) and .deb package
 #   macOS         universal (Apple silicon + Intel) TextCraft.app in a .zip
 #
 # To release: set `version` in [workspace.package] in Cargo.toml, commit, then push a tag
@@ -117,6 +117,8 @@ jobs:
         run: cargo build --release --locked -p nc-app
       - name: Package (.tar.gz)
         run: bash ./packaging/linux/package.sh "$VERSION" target/release/textcraft x86_64
+      - name: Package (.deb)
+        run: bash ./packaging/linux/deb/package-deb.sh "$VERSION" target/release/textcraft amd64
       - uses: actions/upload-artifact@v7
         with:
           name: release-linux-x86_64

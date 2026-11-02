@@ -73,6 +73,153 @@ const FALLBACK: [&str; 4] = [
     "emoji-icon-font",
 ];
 
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+
+/// A font discovered on the host operating system.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SystemFont {
+    /// The family name extracted from the font's metadata.
+    pub name: &'static str,
+    /// Absolute path to the font file.
+    pub path: PathBuf,
+}
+
+/// Discovered system fonts on the user's computer.
+pub fn system_fonts() -> &'static [SystemFont] {
+    static DISCOVERED: OnceLock<Vec<SystemFont>> = OnceLock::new();
+    DISCOVERED.get_or_init(|| {
+        let mut dirs = Vec::new();
+        #[cfg(target_os = "windows")]
+        {
+            if let Some(windir) = std::env::var_os("WINDIR") {
+                dirs.push(Path::new(&windir).join("Fonts"));
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            dirs.push(PathBuf::from("/usr/share/fonts"));
+            dirs.push(PathBuf::from("/usr/local/share/fonts"));
+            if let Some(home) = std::env::var_os("HOME") {
+                let home_p = Path::new(&home);
+                dirs.push(home_p.join(".local/share/fonts"));
+                dirs.push(home_p.join(".fonts"));
+            }
+        }
+
+        let mut list = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+
+        for d in dirs {
+            if !d.is_dir() {
+                continue;
+            }
+            scan_dir_for_fonts(&d, &mut list, &mut seen);
+        }
+
+        list.sort_by(|a, b| a.name.cmp(b.name));
+        list
+    })
+}
+
+fn scan_dir_for_fonts(
+    dir: &Path,
+    list: &mut Vec<SystemFont>,
+    seen: &mut std::collections::HashSet<String>,
+) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            scan_dir_for_fonts(&path, list, seen);
+        } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+            let ext_l = ext.to_ascii_lowercase();
+            if ext_l == "ttf" || ext_l == "otf" {
+                if let Ok(bytes) = std::fs::read(&path) {
+                    if let Some(name) = extract_ttf_name(&bytes) {
+                        if !FAMILIES.contains(&name.as_str()) && !seen.contains(&name) {
+                            seen.insert(name.clone());
+                            let leaked: &'static str = Box::leak(name.into_boxed_str());
+                            list.push(SystemFont { name: leaked, path });
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Extracts the font family name (Name ID 1) from a TrueType or OpenType font byte buffer.
+fn extract_ttf_name(data: &[u8]) -> Option<String> {
+    if data.len() < 12 {
+        return None;
+    }
+    let num_tables = u16::from_be_bytes([data[4], data[5]]) as usize;
+    for i in 0..num_tables {
+        let offset = 12 + i * 16;
+        if offset + 16 > data.len() {
+            break;
+        }
+        let tag = &data[offset..offset + 4];
+        if tag == b"name" {
+            let table_offset = u32::from_be_bytes([
+                data[offset + 8],
+                data[offset + 9],
+                data[offset + 10],
+                data[offset + 11],
+            ]) as usize;
+            if table_offset + 6 > data.len() {
+                break;
+            }
+            let count =
+                u16::from_be_bytes([data[table_offset + 2], data[table_offset + 3]]) as usize;
+            let string_offset =
+                u16::from_be_bytes([data[table_offset + 4], data[table_offset + 5]]) as usize;
+            let storage = table_offset + string_offset;
+
+            for target_id in [1, 4] {
+                for r in 0..count {
+                    let rec = table_offset + 6 + r * 12;
+                    if rec + 12 > data.len() {
+                        break;
+                    }
+                    let plat = u16::from_be_bytes([data[rec], data[rec + 1]]);
+                    let name_id = u16::from_be_bytes([data[rec + 6], data[rec + 7]]);
+                    let length = u16::from_be_bytes([data[rec + 8], data[rec + 9]]) as usize;
+                    let s_offset = u16::from_be_bytes([data[rec + 10], data[rec + 11]]) as usize;
+
+                    if name_id == target_id {
+                        let start = storage + s_offset;
+                        if start + length <= data.len() {
+                            let raw = &data[start..start + length];
+                            if plat == 0 || plat == 3 {
+                                let u16_chars: Vec<u16> = raw
+                                    .chunks_exact(2)
+                                    .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+                                    .collect();
+                                if let Ok(s) = String::from_utf16(&u16_chars) {
+                                    let trimmed = s.trim().to_owned();
+                                    if !trimmed.is_empty() {
+                                        return Some(trimmed);
+                                    }
+                                }
+                            } else if let Ok(s) = std::str::from_utf8(raw) {
+                                let trimmed = s.trim().to_owned();
+                                if !trimmed.is_empty() {
+                                    return Some(trimmed);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 /// A family's chain: the chosen face first, then the built-ins.
 fn chain(chosen: &str) -> Vec<String> {
     std::iter::once(chosen)
@@ -83,7 +230,7 @@ fn chain(chosen: &str) -> Vec<String> {
 
 /// Whether `choice` is one of the families this build carries.
 fn carried(choice: &str) -> bool {
-    FAMILIES.contains(&choice)
+    FAMILIES.contains(&choice) || system_fonts().iter().any(|f| f.name == choice)
 }
 
 /// The key a context remembers its installed face under.
@@ -91,20 +238,51 @@ fn installed_key() -> egui::Id {
     egui::Id::new("textcraft-installed-font")
 }
 
+use std::collections::HashSet;
+use std::sync::Mutex;
+
+static LOADED_SYSTEM_FONTS: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+
+/// Whether `name` is already bound to a font family in this build or loaded from the system.
+pub fn is_font_bound(name: &str) -> bool {
+    if FAMILIES.contains(&name) {
+        return true;
+    }
+    if let Ok(guard) = LOADED_SYSTEM_FONTS.lock() {
+        if let Some(set) = guard.as_ref() {
+            return set.contains(name);
+        }
+    }
+    false
+}
+
+/// Ensures that `name` is registered and bound in this context's font definitions,
+/// loading system font file bytes on demand if needed. Returns `true` if available.
+pub fn ensure_font(ctx: &Context, name: &str) -> bool {
+    if is_font_bound(name) {
+        return true;
+    }
+    if let Some(sys) = system_fonts().iter().find(|f| f.name == name) {
+        if let Ok(_bytes) = std::fs::read(&sys.path) {
+            if let Ok(mut guard) = LOADED_SYSTEM_FONTS.lock() {
+                guard
+                    .get_or_insert_with(HashSet::new)
+                    .insert(name.to_owned());
+            }
+            let current = ctx
+                .data(|data| data.get_temp::<String>(installed_key()))
+                .unwrap_or_else(|| DEFAULT.to_owned());
+            ctx.data_mut(|data| data.remove_temp::<String>(installed_key()));
+            apply(ctx, &current);
+            ctx.request_repaint();
+            return true;
+        }
+    }
+    false
+}
+
 /// Points the document face at `choice`, registering the shipped files the first time
 /// this context asks for one.
-///
-/// The comparison is against what the *context* was last given, not against what this
-/// window's shell remembers, for the reason [`crate::ui::theme::apply`] gives: every
-/// window of an `eframe` app shares one `egui` context and one set of fonts, and a new
-/// window has its own view options to bring it up with (`docs/ui-reference.md` §11). A
-/// face is a coarser thing than a colour, though — a new one rebuilds the glyph atlas —
-/// so the early-out below is load-bearing rather than tidy, and two windows that disagree
-/// about the face pay one re-rasterization each time both are drawn. The trade-off is
-/// recorded in `docs/ui-reference.md` §4.
-///
-/// A name this build does not carry resolves to [`DEFAULT`] rather than to nothing: the
-/// settings file is the one place a family name can arrive from that a newer build wrote.
 pub fn apply(ctx: &Context, choice: &str) {
     let wanted = if carried(choice) { choice } else { DEFAULT };
     let key = installed_key();
@@ -112,12 +290,7 @@ pub fn apply(ctx: &Context, choice: &str) {
         return;
     }
 
-    // Start from `egui`'s defaults so the built-in faces stay registered — they are the
-    // fallback every chain ends in — then lay the shipped families over the top.
     let mut fonts = FontDefinitions::default();
-    // The interface face. Windows' own UI font is used when the machine has it — read
-    // from the system, never bundled — so the chrome looks like the rest of the desktop;
-    // elsewhere `egui`'s built-in proportional face stays.
     if let Some(bytes) = system_ui_font() {
         fonts.font_data.insert(
             "Segoe UI".to_owned(),
@@ -137,9 +310,42 @@ pub fn apply(ctx: &Context, choice: &str) {
             .families
             .insert(FontFamily::Name(family.into()), chain(family));
     }
-    // The surfaces all ask for `FontFamily::Monospace`, which is what this moves. Leaving
-    // the choice out of that chain would mean a face the user picked that nothing asks
-    // for, and a default of egui's own Hack: the old bug again, one level down.
+
+    // Also include any previously loaded system fonts!
+    if let Ok(guard) = LOADED_SYSTEM_FONTS.lock() {
+        if let Some(set) = guard.as_ref() {
+            for extra in set {
+                if let Some(sys) = system_fonts().iter().find(|f| f.name == extra.as_str()) {
+                    if let Ok(bytes) = std::fs::read(&sys.path) {
+                        fonts
+                            .font_data
+                            .insert(extra.clone(), FontData::from_owned(bytes).into());
+                        fonts
+                            .families
+                            .insert(FontFamily::Name(extra.clone().into()), chain(extra));
+                    }
+                }
+            }
+        }
+    }
+
+    // If `wanted` is an operating system font, load its file bytes!
+    if let Some(sys) = system_fonts().iter().find(|f| f.name == wanted) {
+        if let Ok(bytes) = std::fs::read(&sys.path) {
+            fonts
+                .font_data
+                .insert(wanted.to_owned(), FontData::from_owned(bytes).into());
+            fonts
+                .families
+                .insert(FontFamily::Name(wanted.into()), chain(wanted));
+            if let Ok(mut guard) = LOADED_SYSTEM_FONTS.lock() {
+                guard
+                    .get_or_insert_with(HashSet::new)
+                    .insert(wanted.to_owned());
+            }
+        }
+    }
+
     fonts.families.insert(FontFamily::Monospace, chain(wanted));
 
     ctx.set_fonts(fonts);

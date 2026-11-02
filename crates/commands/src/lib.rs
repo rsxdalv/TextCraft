@@ -58,7 +58,7 @@ mod tests {
         );
         assert!(registry_integrity().is_empty());
         let menubar = build_menu_bar(AvailabilityContext::initial());
-        assert_eq!(menubar.len(), 3);
+        assert_eq!(menubar.len(), 5);
     }
 
     #[test]
@@ -67,6 +67,6 @@ mod tests {
             .iter()
             .map(|model| model.menu.label())
             .collect();
-        assert_eq!(labels, ["File", "Edit", "View"]);
+        assert_eq!(labels, ["File", "Edit", "View", "Insert", "Format"]);
     }
 }

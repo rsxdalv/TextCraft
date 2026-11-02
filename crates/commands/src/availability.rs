@@ -23,6 +23,18 @@ pub enum Availability {
     Service,
     /// Enabled only when more than one tab is open.
     MultipleTabs,
+    /// Enabled only when the active document has a path on disk.
+    HasPath,
+    /// Enabled only when there are recent files in history.
+    HasRecent,
+    /// Enabled only when there is at least one closed tab to restore.
+    HasClosedTabs,
+    /// Enabled when there are multiple tabs or any tab has unsaved changes.
+    SaveAll,
+    /// Enabled only when the active document has an edit to undo.
+    CanUndo,
+    /// Enabled only when the active document has an edit to redo.
+    CanRedo,
 }
 
 /// The shell state that availability rules are evaluated against.
@@ -42,10 +54,24 @@ pub struct AvailabilityContext {
     pub tab_count: usize,
     /// Whether the status bar is currently shown (the `View ▸ Status bar` check).
     pub status_bar_visible: bool,
+    /// Whether the workspace sidebar is currently shown (`View ▸ Workspace sidebar`).
+    pub sidebar_visible: bool,
     /// Whether word wrap is currently on (the `View ▸ Word wrap` check).
     pub word_wrap: bool,
     /// Whether a Markdown document is shown formatted rather than as source.
     pub formatted_view: bool,
+    /// Whether the active document is backed by a file on disk.
+    pub has_path: bool,
+    /// Whether any tab in the window has unsaved changes.
+    pub any_dirty: bool,
+    /// Whether there are recent files in the session.
+    pub has_recent: bool,
+    /// Whether there are closed tabs in the window undo stack.
+    pub has_closed_tabs: bool,
+    /// Whether the active document has an edit to undo.
+    pub can_undo: bool,
+    /// Whether the active document has an edit to redo.
+    pub can_redo: bool,
 }
 
 impl AvailabilityContext {
@@ -59,8 +85,15 @@ impl AvailabilityContext {
             service_available: false,
             tab_count: 1,
             status_bar_visible: true,
+            sidebar_visible: true,
             word_wrap: true,
             formatted_view: false,
+            has_path: false,
+            any_dirty: false,
+            has_recent: false,
+            has_closed_tabs: false,
+            can_undo: false,
+            can_redo: false,
         }
     }
 }
@@ -83,6 +116,12 @@ impl Availability {
             Availability::Markdown => context.document_present && context.markdown_enabled,
             Availability::Service => context.service_available,
             Availability::MultipleTabs => context.tab_count > 1,
+            Availability::HasPath => context.document_present && context.has_path,
+            Availability::HasRecent => context.has_recent,
+            Availability::HasClosedTabs => context.has_closed_tabs,
+            Availability::SaveAll => context.tab_count > 1 || context.any_dirty,
+            Availability::CanUndo => context.document_present && context.can_undo,
+            Availability::CanRedo => context.document_present && context.can_redo,
         }
     }
 }
@@ -102,6 +141,10 @@ mod tests {
         assert!(!Availability::Markdown.allows(ctx));
         assert!(!Availability::Service.allows(ctx));
         assert!(!Availability::MultipleTabs.allows(ctx));
+        assert!(!Availability::HasPath.allows(ctx));
+        assert!(!Availability::HasRecent.allows(ctx));
+        assert!(!Availability::HasClosedTabs.allows(ctx));
+        assert!(!Availability::SaveAll.allows(ctx));
     }
 
     #[test]
@@ -109,10 +152,29 @@ mod tests {
         let ctx = AvailabilityContext {
             has_selection: true,
             tab_count: 3,
+            has_path: true,
+            any_dirty: true,
+            has_recent: true,
+            has_closed_tabs: true,
             ..AvailabilityContext::initial()
         };
         assert!(Availability::Selection.allows(ctx));
         assert!(Availability::MultipleTabs.allows(ctx));
+        assert!(Availability::HasPath.allows(ctx));
+        assert!(Availability::SaveAll.allows(ctx));
+        assert!(Availability::HasRecent.allows(ctx));
+        assert!(Availability::HasClosedTabs.allows(ctx));
+    }
+
+    #[test]
+    fn save_all_allows_single_dirty_tab() {
+        let ctx = AvailabilityContext {
+            tab_count: 1,
+            dirty: true,
+            any_dirty: true,
+            ..AvailabilityContext::initial()
+        };
+        assert!(Availability::SaveAll.allows(ctx));
     }
 
     #[test]
@@ -121,11 +183,13 @@ mod tests {
             document_present: false,
             has_selection: true,
             dirty: true,
+            has_path: true,
             ..AvailabilityContext::initial()
         };
         assert!(!Availability::Edited.allows(ctx));
         assert!(!Availability::Selection.allows(ctx));
         assert!(!Availability::Dirty.allows(ctx));
+        assert!(!Availability::HasPath.allows(ctx));
         assert!(Availability::Always.allows(ctx));
     }
 }

@@ -1,0 +1,48 @@
+app-id: com.github.rsxdalv.TextCraft
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: textcraft
+rename-desktop-file: com.github.rsxdalv.TextCraft.desktop
+rename-icon: textcraft
+
+finish-args:
+  # Graphical windowing support
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+
+  # Hardware acceleration
+  - --device=dri
+
+  # File system access to edit files
+  - --filesystem=host
+
+  # XDG Desktop Portal integration for file dialogs
+  - --talk-name=org.freedesktop.portal.FileChooser
+  - --talk-name=org.freedesktop.portal.Documents
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/textcraft/cargo
+
+modules:
+  - name: textcraft
+    buildsystem: simple
+    build-commands:
+      # Build native binary
+      - cargo build --release --locked -p nc-app
+
+      # Install binary
+      - install -Dm755 target/release/textcraft /app/bin/textcraft
+
+      # Install desktop file, icon and AppStream metadata
+      - install -Dm644 packaging/linux/com.github.rsxdalv.TextCraft.desktop /app/share/applications/com.github.rsxdalv.TextCraft.desktop
+      - install -Dm644 packaging/linux/com.github.rsxdalv.TextCraft.metainfo.xml /app/share/metainfo/com.github.rsxdalv.TextCraft.metainfo.xml
+      - install -Dm644 assets/textcraft.png /app/share/icons/hicolor/256x256/apps/com.github.rsxdalv.TextCraft.png
+    sources:
+      - type: dir
+        path: ../../..
